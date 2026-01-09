@@ -20,7 +20,8 @@ enum OPTIONS {
     OPT_FRAGMENT,    // -f, --mtu
     OPT_USURP,       // -S, --usurp
     OPT_PATTERN,     // --data
-    OPT_NBR,         //
+
+    OPT_NBR, //
 };
 
 // TO ADD
