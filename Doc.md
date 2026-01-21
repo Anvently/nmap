@@ -38,8 +38,8 @@ Exemple: scanme.nmap.org, microsoft.com/24, 192.168.0.1; 10.0-255.0-255.1-254
 
 DÉCOUVERTE DES HÔTES:
 -sL: List Scan - Liste simplement les cibles à scanner
--sP: Ping Scan - Ne fait que déterminer si les hôtes sont en ligne -P0: Considère que tous les hôtes sont en ligne -- évite la découverte des hôtes
--PN: Considérer tous les hôtes comme étant connectés -- saute l'étape de découverte des hôtes
+-sn: Ping Scan - Ne fait que déterminer si les hôtes sont en ligne
+-Pn: Considérer tous les hôtes comme étant connectés -- saute l'étape de découverte des hôtes
 -PS/PA/PU [portlist]: Découverte TCP SYN/ACK ou UDP des ports en paramètre
 -PE/PP/PM: Découverte de type requête ICMP echo, timestamp ou netmask 
 -PO [num de protocole]: Ping IP (par type)
@@ -162,9 +162,7 @@ nmap -v -sP 192.168.0.0/16 10.0.0.0/8
 	filtering. This slows down the scan dramatically.
 
 ## unfiltered
-	The unfiltered state means that a port is accessible, but Nmap is unable to determine whether it is open or closed. Only the ACK scan, which is used to map
-	firewall rulesets, classifies ports into this state. Scanning unfiltered ports with other scan types such as Window scan, SYN scan, or FIN scan, may help resolve
-	whether the port is open.
+	The unfiltered state means that a port is accessible, but Nmap is unable to determine whether it is open or closed. Only the ACK scan, which is used to map firewall rulesets, classifies ports into this state. Scanning unfiltered ports with other scan types such as Window scan, SYN scan, or FIN scan, may help resolve whether the port is open.
 
 ## open|filtered
 	Nmap places ports in this state when it is unable to determine whether a port is open or filtered. This occurs for scan types in which open ports give no
@@ -177,10 +175,7 @@ nmap -v -sP 192.168.0.0/16 10.0.0.0/8
 # Scan methods
 
 ## -sS (TCP SYN scan)
-	SYN scan is the default and most popular scan option for good reasons. It can be performed quickly, scanning thousands of ports per second on a fast network not
-	hampered by restrictive firewalls. It is also relatively unobtrusive and stealthy since it never completes TCP connections. SYN scan works against any compliant
-	TCP stack rather than depending on idiosyncrasies of specific platforms as Nmap's FIN/NULL/Xmas, Maimon and idle scans do. It also allows clear, reliable
-	differentiation between the open, closed, and filtered states.
+	SYN scan is the default and most popular scan option for good reasons. It can be performed quickly, scanning thousands of ports per second on a fast network not hampered by restrictive firewalls. It is also relatively unobtrusive and stealthy since it never completes TCP connections. SYN scan works against any compliant TCP stack rather than depending on idiosyncrasies of specific platforms as Nmap's FIN/NULL/Xmas, Maimon and idle scans do. It also allows clear, reliable differentiation between the open, closed, and filtered states.
 
 	This technique is often referred to as half-open scanning, because you don't open a full TCP connection. You send a SYN packet, as if you are going to open a
 	real connection and then wait for a response. A SYN/ACK indicates the port is listening (open), while a RST (reset) is indicative of a non-listener. If no
@@ -249,20 +244,16 @@ nmap -v -sP 192.168.0.0/16 10.0.0.0/8
 	closed, while no response means it is open|filtered. The port is marked filtered if an ICMP unreachable error (type 3, code 0, 1, 2, 3, 9, 10, or 13) is
 	received.
 
-	The key advantage to these scan types is that they can sneak through certain non-stateful firewalls and packet filtering routers. Another advantage is that these
-	scan types are a little more stealthy than even a SYN scan. Don't count on this though—most modern IDS products can be configured to detect them. The big
+	The key advantage to these scan types is that they can sneak through certain non-stateful firewalls and packet filtering routers. Another advantage is that these scan types are a little more stealthy than even a SYN scan. Don't count on this though—most modern IDS products can be configured to detect them. The big
 	downside is that not all systems follow RFC 793 to the letter. A number of systems send RST responses to the probes regardless of whether the port is open or
 	not. This causes all of the ports to be labeled closed. Major operating systems that do this are Microsoft Windows, many Cisco devices, BSDI, and IBM OS/400.
 	This scan does work against most Unix-based systems though. Another downside of these scans is that they can't distinguish open ports from certain filtered ones,
 	leaving you with the response open|filtered.
 
 ## -sA (TCP ACK scan)
-	This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports. It is used to map out firewall rulesets,
-	determining whether they are stateful or not and which ports are filtered.
+	This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports. It is used to map out firewall rulesets, determining whether they are stateful or not and which ports are filtered.
 
-	The ACK scan probe packet has only the ACK flag set (unless you use --scanflags). When scanning unfiltered systems, open and closed ports will both return a RST
-	packet. Nmap then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined. Ports that
-	don't respond, or send certain ICMP error messages back (type 3, code 0, 1, 2, 3, 9, 10, or 13), are labeled filtered.
+	The ACK scan probe packet has only the ACK flag set (unless you use --scanflags). When scanning unfiltered systems, open and closed ports will both return a RST packet. Nmap then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined. Ports that don't respond, or send certain ICMP error messages back (type 3, code 0, 1, 2, 3, 9, 10, or 13), are labeled filtered.
 
 
 # Options
