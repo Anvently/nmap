@@ -2,9 +2,9 @@
 #include <elf.h>
 #include <errno.h>
 #include <error.h>
-#include <ft_nmap.h>
 #include <netdb.h>
 #include <netinet/ip.h>
+#include <nmap.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 

@@ -7,41 +7,66 @@
 2. Allocation des hôtes et des arrays de struct port_info
 3. Boucle principale :
    1. Estimation du nombre de worker maximal selon la situation :
-      - 1 resolver_worker/hote qui n'est pas en état de scan
-      - max(nombre de ports restants * nbr_scan, multithreading ? max_thread : MAX_WORKER)
+      - 1 worker/hote
+      - max(nombre d'hôte restant, max_thread)
     2. Si nombre idéal de worker =  0 => NMAP DONE 
     3. Tant que le nombre max de worker n'est pas atteint :
-       1.  Si un hôte n'est pas scanné :
-           1.  Assignation d'un hôte
-           2.  Création d'un resolver_worker
-           3.  Si multithread : lancement du thread
-           4.  Si async : ajout du worker à la pool de worker async
-       2.  Si un hôte est prêt à être scanné :
-           1.  Assignation d'une combinaison scan/port libre
-           2.  Assignation des handlers de scan
-           3.  Création d'un scan_worker
-           4.  Si multithread : lancement du thread
-           5.  Si async : ajout du worker à la pool de worker async
+        1.  Création d'un scan_worker :
+			- Assignation d'un hôte disponible
+            - Assignation des handlers
+            - Appel de la fonction init 
+			- Lancement du thread
+			- Création du polling dans la boucle principal du thread
    2. Si un hôte est complètement scanné : on l'affiche
-   3. Polling (statique) du pool de worker async
-      1. pour chaque worker, si un des fds est pollé, on execute le switch correspondant
-4. resolver_switch (executé en boucle par les threads après avoir pollé):
-   1. Résolution dns des hôtes // bloquant
-   2. Facultatif : filtrage avec ping ICMP et/ou TCP pour vérifier si l'hôte est en ligne
-      1. Si socket non ouvert : ouverture des sockets 
-      2. Polling des sockets du worker
-   
-5. worker_switch (executé en boucle par les threads après avoir pollé)
-   1. Si socket non ouvert, ouverture des sockets
-   2. Polling des sockets
-   3. Si qlq chose à lire :
-      1. Appel de handle_read_scan
-   4. switch en fonction de l'état du scan
-   5. Si Complet
+
+4. worker_switch
+   1. Si flag send_tate toggled, polling avec timeout
+      1. Si qlq chose a lire, on toggle flag rcv
+      2. si timeout, toggle flag timeout
+   2. Handlers selon l'étape : init, packet_send, packet_rcv, packet_timeout, release
+      - DNS host H:
+         - init : 
+      - PING host H:
+      	- init : raw TCP socket (binded + connected to HOST:80) with IP_RECVERR + ephemeral SOCK_STREAM socket
+      	- packet_send : send ICMP echo + TCP SYN
+      	- packet_rcv : rcv TCP response or ICMP error/response
+      	- packet_timeout : close or resend
+      	- release : close sockets
+      - TCP port P :
+		- init : raw TCP socket (binded + connected to HOST:P) with IP_RECVERR + ephemeral SOCK_STREAM socket
+		- packet_send : send syn_ack OU syn_rst
+		- packet_rcv : receive TCP answer ou ICMP error
+		- packet_timeout : close conn or resend
+		- release : close sockets
+	 - UDP port P:
+		- init : UDP socket with IP_RECVERR, binded to ephemeral port + connected (HOST:P)
+		- packet_send : send probe
+		- packet_rcv : receive UDP answer ou ICMP error
+		- packet_timeout : close or resend
+		- release : close sockets
+	 - CONN port P:
+		- init : TCP SOCK_STREAM socket, binded to ephemeral port.
+		- packet_send : connect(), blocking
+		- packet_rcv : null
+		- packet_timeout : null
+		- release : close socket
+   3. Si qlq chose à lire : packet_rcv()
+   4. Si qlq chose à envoyer : packet_send()
+   5. Si timeout : packet_timeout()
+   6. Si terminé : release()
+   7. Si Complet
       1. fermeture des sockets
       2. arrêt du thread
-      3. libération du worker
 
+**Exemple de prototype du worker switch :**
+
+```C
+ /* 
+	For multithread : called by thread main loop, which have its own polling instance.
+	For asynchronous : called by main event loop, with a shared polling instance.
+  */
+ int	worker_switch(t_worker* data, struct pollfd* readfds, unsigned int nfds);
+```
 
 # Constant
 

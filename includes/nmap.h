@@ -1,5 +1,6 @@
 #include <libft.h>
 #include <netinet/ip_icmp.h>
+#include <poll.h>
 #include <stdint.h>
 #include <sys/time.h>
 
@@ -56,14 +57,16 @@ struct s_options {
 };
 
 #define PING_TIMEOUT 5
-#define MAX_WORKER_ASYNC 100
-#define MAX_WORKER_THREADS 250
+#define MAX_WORKER 250 // Maximum number of threads
+// Maximum number of task a worker can take (only UDP scan is able to scan
+// multiple port of a same host)
+#define MAX_TASK_WORKER 16
 
 enum host_state {
     STATE_ERROR = -2, // Error received
     STATE_DOWN = -1,  // Ping failed (host unreachable)
 
-    STATE_PENDING_RESOLVE = 0, // Was inputed by user
+    STATE_PENDING_RESOLVE = 0, // Was inputed by user // No worker assigned
 
     // blocking
     // DNS
@@ -91,7 +94,9 @@ enum scan_state {
 } __attribute__((__packed__));
 
 enum scan_type {
-    SCAN_SYN = 0,
+    SCAN_DNS = 0,
+    SCAN_PING,
+    SCAN_SYN,
     SCAN_ACK,
     SCAN_NULL,
     SCAN_FIN,
@@ -128,6 +133,7 @@ struct port_info {
         uint8_t ttl;
         enum result_reason type;
     } reason;
+    struct nmap_error *error; // Error related to a single port
 } __attribute__((__packed__));
 
 struct scan_result {
@@ -142,6 +148,8 @@ struct scan_result {
     // Allocated array, (randomized) ports, the main thread can only
     // access these element when the scan is done
     struct port_info *ports;
+    // Error related to host (for ping or DNS scan for example)
+    struct nmap_error *error;
 } __attribute__((__packed__));
 
 struct host {
@@ -150,16 +158,85 @@ struct host {
     char *hostname;
     enum host_state state;
     struct scan_result scans[SCAN_NBR];
-    struct nmap_error error;
 };
 
-struct worker_data {
+struct dns_data {
+    const char **hostname_rslv_ptr; // &host->hostname_rsvl
+};
+
+struct ping_data {
+    int sock_eph;             // mock socket to lock an ephemeral port
+    int sock_tcp;             // tcp raw socket
+    int sock_icmp;            // icmp socket
+    struct in_addr daddr;     // peer address
+    struct sockaddr_in saddr; // tcp
+    struct scan_result *rslt;
+};
+
+struct tcp_data {           // Used by SYN, ACK, NULL, XMAS, FIN
+    uint8_t flag;           // TCP flag to send ()
+    int sock_eph;           // mock socket to lock an ephemeral port
+    int sock_tcp;           // tcp raw socket
+    struct port_info *port; // result
+};
+
+struct connect_data {
+    int sock_stream;      // bind to ephemeral port
+    struct in_addr daddr; // peer address
+    struct port_info *port;
+};
+
+struct udp_data {
+    int sock_udp;         // binded to ephemeral port + connected to peer
+    struct in_addr daddr; // peer address
+    struct port_info *port;
+};
+
+union task_data {
+    struct dns_data dns;
+    struct ping_data ping;
+    struct tcp_data tcp;
+    struct connect_data connect;
+    struct udp_data udp;
+};
+
+struct task_handle {
+    // Pointer toward rslt data. No race condition if assigned by host
+
     enum scan_type scan_type;
-    struct port_info *rslt; // Pointer toward rslt data. !!! Race-condition !!!
+
+    union task_data data;
+    struct timeval timeout;
+    // Called at beginning of thread
+    int (*init)(struct task_handle *data);
+    // Called when send_state is toggled
+    int (*packet_send)(struct task_handle *data);
+    // Called when main_rcv or icmp_rcv is toggled
+    int (*packet_rcv)(struct task_handle *data);
+    // Called when timeout is toggled
+    int (*packet_timeout)(struct task_handle *data);
+    // Called when done or error is toggled
+    int (*release)(struct task_handle *data);
+    struct {
+        uint8_t initialized : 1;
+        uint8_t send_state : 1; // 0 => nothing sent, 1 => something sent
+                                // (waiting for related response)
+        uint8_t main_rcv : 1;   // incoming tcp/udp packet
+        uint8_t icmp_rcv : 1;   // incoming icmp (for ping only)
+        uint8_t timeout : 1;    // Timeout has been reached
+        uint8_t done : 1;       // Scan complete
+        uint8_t error : 1;      // Error
+    } flags;
+    struct nmap_error **error; // Ptr where errors must be registered
+};
+
+struct worker_handle { // 1 worker = 1 thread = 1 polling
+    struct task_handle *tasks;
+    unsigned int nbr_tasks;
 };
 
 struct nmap_error {
-    int errno;
+    int error;
     union { // Examples
         struct {
 

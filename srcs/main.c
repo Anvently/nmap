@@ -1,16 +1,8 @@
-#include <ft_nmap.h>
 #include <libft.h>
 #include <netinet/ip.h>
-#include <signal.h>
+#include <nmap.h>
 
 const char *executable_name = "ft_ping";
-bool stop = false;
-
-static void sigint_handler(int signal) {
-    if (signal == SIGINT) {
-        stop = true;
-    }
-}
 
 static const char help[] = "\n\
 Usage: ft_ping [OPTION...] HOST ...\n\
@@ -48,6 +40,9 @@ int main(int argc, char **argv) {
                          .linger_timeout = 1,
                          .interval = -1.f};
     unsigned int nbr_args = 0;
+    printf("port_info=%lu\n"
+           "scan_result=%lu\n",
+           sizeof(struct port_info), sizeof(struct scan_result));
     if (ft_options_retrieve(argc - 1, argv + 1, &options, &nbr_args))
         return (2);
     if (options.help) {
@@ -57,11 +52,6 @@ int main(int argc, char **argv) {
     if (nbr_args == 0) {
         ft_dprintf(1, "%s\n", no_argument);
         return (1);
-    }
-    sigaction(SIGINT, &(struct sigaction){.sa_handler = sigint_handler}, NULL);
-    for (int i = 1; i < argc; i++) {
-        if (argv[i] && ping(argv[i], &options))
-            return (1);
     }
 
     return (0);
