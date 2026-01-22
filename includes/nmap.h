@@ -8,22 +8,26 @@
 #define NMAP_H
 
 enum OPTIONS {
-    OPT_VERBOSE = 0, //-v Verbose output. Do not suppress DUP replies when
-                     // pinging multicast address
-    OPT_HELP,        // -h
-    OPT_SIZE,        // -s
-    OPT_NUMERIC,     // -n
-    OPT_INTERFACE,   // -e
-    OPT_RESOLVE,     // -R
-    OPT_TTL,         // -ttl
-    OPT_SEQUENTIAL,  // -, --sequential
-    OPT_FRAGMENT,    // -f, --mtu
-    OPT_USURP,       // -S, --usurp
-    OPT_PATTERN,     // --data
-    OPT_REASON,      // --reason
+    OPT_VERBOSE = 0,    //-v Verbose output. Do not suppress DUP replies when
+                        // pinging multicast address
+    OPT_HELP,           // -h, --help
+    OPT_SIZE,           // -s, --size
+    OPT_NUMERIC,        // -n, --numeric
+    OPT_RESOLVE,        // -R, --resolve
+    OPT_INTERFACE,      // -e, --interface
+    OPT_PATTERN,        // --data
+    OPT_TTL,            // -ttl
+    OPT_SEQUENTIAL,     // -r, --sequential
+    OPT_FRAGMENT,       // -f, --mtu
+    OPT_USURP,          // -S, --usurp
+    OPT_REASON,         // --reason
+    OPT_LIST,           // -L, --list
+    OPT_SKIP_DISCOVERY, // --skip-ping
+    OPT_SRC_PORT,       // -g, --source-port
+    OPT_OPEN,           // --open
+    OPT_ALL,            // --all
     // CUSTOMs
-    OPT_PORTS,   // -p, --port
-    OPT_IP,      // --ip
+    OPT_PORT,    // -p, --port
     OPT_THREADS, // -t, --threads (0 à 250)
     OPT_SCAN,    // -s, --scan
     OPT_FILE,    // --file
@@ -40,20 +44,30 @@ enum OPTIONS {
 /// @brief ```t_options``` typedef is already defined as an alias for this
 /// struct in libft
 struct s_options {
-    bool help;
     bool verbose;
+    bool help;
     unsigned int size;
-    unsigned int timeout;
-    unsigned int linger_timeout;
-    const char *pattern;
-    unsigned int identifier;
-    uint8_t tos;
-    uint8_t ttl;
     bool numeric;
-    bool ignore_routing;
-    float interval;
-    bool flood;
-    unsigned int preload;
+    bool resolve;
+    const char *interface;
+    const char *pattern;
+    uint8_t ttl;
+    bool sequential;
+    uint16_t mtu;
+    struct {
+        const char *arg;
+        struct in_addr addr;
+    } usurp;
+    bool reason;
+    bool list;
+    bool skip_discovery;
+    uint16_t src_port;
+    bool open;
+    bool all;
+    uint16_t *ports;
+    uint16_t threads;
+    uint8_t scan; // 1 scan = 1 bit
+    const char *file;
 };
 
 #define PING_TIMEOUT 5
