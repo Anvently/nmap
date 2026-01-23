@@ -270,7 +270,7 @@ static int register_threads(t_options *opt, char *arg) {
     int ret = 0;
 
     ret = ft_strtoul_base(arg, &rslt, NULL, "0123456789");
-    if (rslt > MAX_WORKER) // @todo NEED TO VERIFY MAXIMUM MTU
+    if (rslt > MAX_WORKER || rslt == 0)
         ret = 1;
     if (ret != 0)
         ft_options_err_invalid_argument("thread", arg, NULL);

@@ -98,11 +98,12 @@ static int add_host(struct host **hosts, const char *hostname,
     host.state = STATE_PENDING_RESOLVE;
     // DNS scan - always
     host.scans[SCAN_DNS] = (struct scan_result){
-        .remaining = 1, .type = SCAN_DNS, .state = SCAN_PENDING, .ports = NULL};
+        .remaining = 0, .type = SCAN_DNS, .state = SCAN_PENDING, .ports = NULL};
 
     // Ping scan
     host.scans[SCAN_PING] = (struct scan_result){
-        .remaining = 1,
+        .remaining = opts->skip_discovery ? 0 : 1,
+        .nbr_port = opts->skip_discovery ? 0 : 1,
         .type = SCAN_PING,
         .state = opts->skip_discovery ? SCAN_DONE : SCAN_PENDING};
     host.scans[SCAN_PING].ports = calloc(1, sizeof(struct port_info));
@@ -117,18 +118,22 @@ static int add_host(struct host **hosts, const char *hostname,
     if (opts->list == false) {
         for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
 
+            host.scans[i] = (struct scan_result){
+                .remaining = 0,
+                .nbr_port = 0,
+                .state = SCAN_DISABLE,
+                .type = i == SCAN_UDP && opts->enabled_scan.raw_udp
+                            ? SCAN_RAW_UDP
+                            : i};
+
             // If scan is enabled
             if (((uint16_t)opts->enabled_scan.int_representation &
-                 ((uint16_t)1 << i)) == 1 ||
+                 ((uint16_t)1 << i)) != 0 ||
                 (i == SCAN_UDP && opts->enabled_scan.raw_udp)) {
 
-                host.scans[i] = (struct scan_result){
-                    .remaining = nbr_port,
-                    .nbr_port = nbr_port,
-                    .state = SCAN_PENDING,
-                    .type = i == SCAN_UDP && opts->enabled_scan.raw_udp
-                                ? SCAN_RAW_UDP
-                                : i};
+                host.scans[i].state = SCAN_PENDING;
+                host.scans[i].nbr_port = nbr_port;
+                host.scans[i].remaining = nbr_port;
 
                 host.scans[i].ports =
                     allocate_ports(vec_ports, opts->sequential);
@@ -240,14 +245,14 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
 
     if (vec_hosts == NULL)
         error(-1, errno, "allocating host vector");
-    while (nbr_args--) {
+    while (nbr_args) {
         if (*args != NULL) {
             if ((ret = add_host(&vec_hosts, *args, vec_ports, opts)))
                 break;
+            nbr_args--;
         }
         args++;
     }
-    ft_dump_vector((t_vector *)vec_ports, true);
     ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
     free_hosts(&vec_hosts);
     ft_vector_free((t_vector **)&vec_ports);

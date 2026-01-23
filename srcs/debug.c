@@ -39,6 +39,17 @@ const char *scan_type_strings[] = {
     [SCAN_XMAS] = "XMAS",      [SCAN_CONNECT] = "CONN", [SCAN_UDP] = "UDP",
     [SCAN_RAW_UDP] = "UDP_RAW"};
 
+const char *reason_strings[] = {
+    [REASON_UNKNOWN] = "unknown",
+    [REASON_ICMP_REPLY] = "icmp reply",
+    [REASON_SYN_ACK] = "syn_ack",
+    [REASON_RST] = "reset",
+    [REASON_PORT_UNREACH] = "port unreachable",
+    [REASON_CONN_REFUSED] = "connection refused",
+    [REASON_USER_INPUT] = "user input",
+    [REASON_NO_RESPONSE] = "no response",
+};
+
 void print_host(struct host *);
 void print_verbose_ip(struct iphdr *iphdr);
 void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size);
@@ -50,11 +61,13 @@ static void print_scan_state(struct scan_result *scan) {
     printf("%s (%hhu): %s (%hhu)", scan_type_strings[scan->type], scan->type,
            scan_state_strings[scan->state], scan->state);
     if (scan->type > SCAN_DNS)
-        printf(", %hu port", scan->nbr_port);
+        printf(", %hu/%hu port", (scan->nbr_port - scan->remaining),
+               scan->nbr_port);
     if (scan->nbr_port < 2 && scan->ports &&
         scan->ports->reason.type != REASON_UNKNOWN)
-        printf(", reason = %hhu (ttl = %hhu)", scan->ports->reason.type,
-               scan->ports->reason.ttl);
+        printf(", reason = %s (%hhu) (ttl = %hhu)",
+               reason_strings[scan->ports->reason.type],
+               scan->ports->reason.type, scan->ports->reason.ttl);
     printf("\n");
 }
 
@@ -82,8 +95,6 @@ void print_host(struct host *host) {
     for (unsigned int i = 0; i < SCAN_NBR; i++) {
         print_scan_state(host->scans + i);
     }
-    if (host->scans[SCAN_RAW_UDP].state > SCAN_DISABLE)
-        print_scan_state(&host->scans[SCAN_RAW_UDP]);
     printf("---\n");
 }
 
