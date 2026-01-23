@@ -7,6 +7,13 @@
 #ifndef NMAP_H
 #define NMAP_H
 
+#define PING_TIMEOUT 5
+#define MAX_WORKER 250 // Maximum number of threads
+// Maximum number of task a worker can take (only UDP scan is able to scan
+// multiple port of a same host)
+#define MAX_TASK_WORKER 16
+#define MAX_PORT_NBR 1024U // Maximum different port nmap is allowed to scan
+
 enum OPTIONS {
     OPT_VERBOSE = 0,    //-v Verbose output. Do not suppress DUP replies when
                         // pinging multicast address
@@ -34,12 +41,23 @@ enum OPTIONS {
     OPT_NBR,     //
 };
 
-// TO ADD
-/*
---open
-
-
-*/
+union scan_list {
+    struct {
+        uint16_t dns : 1;
+        uint16_t ping : 1;
+        uint16_t syn : 1;
+        uint16_t ack : 1;
+        uint16_t null : 1;
+        uint16_t fin : 1;
+        uint16_t xmas : 1;
+        uint16_t connect : 1;
+        uint16_t udp : 1;
+        uint16_t raw_udp
+            : 1; // if usurp option is enabled, we need raw socket the
+                 // IP_HDRINCL option enabled, then limitation is 1 host/socket
+    };
+    uint16_t int_representation;
+} __attribute__((__packed__));
 
 /// @brief ```t_options``` typedef is already defined as an alias for this
 /// struct in libft
@@ -64,23 +82,18 @@ struct s_options {
     uint16_t src_port;
     bool open;
     bool all;
-    uint16_t *ports;
+    const char *ports;
     uint16_t threads;
-    uint8_t scan; // 1 scan = 1 bit
+    union scan_list enabled_scan; // 1 scan = 1 bit
     const char *file;
 };
 
-#define PING_TIMEOUT 5
-#define MAX_WORKER 250 // Maximum number of threads
-// Maximum number of task a worker can take (only UDP scan is able to scan
-// multiple port of a same host)
-#define MAX_TASK_WORKER 16
-
 enum host_state {
-    STATE_ERROR = -2, // Error received
-    STATE_DOWN = -1,  // Ping failed (host unreachable)
+    STATE_DOUBLOON = 0, // Host was inputed twice
+    STATE_ERROR,        // Error received
+    STATE_DOWN,         // Ping failed (host unreachable)
 
-    STATE_PENDING_RESOLVE = 0, // Was inputed by user // No worker assigned
+    STATE_PENDING_RESOLVE = 3, // Was inputed by user // No worker assigned
 
     // blocking
     // DNS
@@ -115,9 +128,10 @@ enum scan_type {
     SCAN_NULL,
     SCAN_FIN,
     SCAN_XMAS,
-    SCAN_UDP,
     SCAN_CONNECT,
-    SCAN_NBR
+    SCAN_UDP,
+    SCAN_NBR,
+    SCAN_RAW_UDP // Doesn't really count as a different scan from udp
 } __attribute__((__packed__));
 
 enum port_state {
@@ -133,10 +147,12 @@ enum port_state {
 
 enum result_reason {
     REASON_UNKNOWN = 0,
+    REASON_ICMP_REPLY,
     REASON_SYN_ACK,
     REASON_RST,
     REASON_PORT_UNREACH,
     REASON_CONN_REFUSED,
+    REASON_USER_INPUT,
     REASON_NO_RESPONSE,
 } __attribute__((__packed__));
 
@@ -159,8 +175,12 @@ struct scan_result {
     // and decrement remaining
     uint16_t remaining;
 
+    uint16_t nbr_port;
     // Allocated array, (randomized) ports, the main thread can only
-    // access these element when the scan is done
+    // access these element when the scan is done.
+    // DNS scan has no port_info associated (ports = NULL).
+    // Ping scan has a single port_info associated
+    // Port scans have one port_info struct per port scanned.
     struct port_info *ports;
     // Error related to host (for ping or DNS scan for example)
     struct nmap_error *error;
@@ -168,10 +188,11 @@ struct scan_result {
 
 struct host {
     struct sockaddr_in addr;
-    char *hostname_rsvl; // FQDN - resolved host with getnameinfo()
-    char *hostname;
+    const char *hostname_rsvl; // FQDN - resolved host with getnameinfo()
+    const char *hostname;
     enum host_state state;
     struct scan_result scans[SCAN_NBR];
+    union scan_list current_scan;
 };
 
 struct dns_data {
@@ -264,5 +285,7 @@ struct nmap_error {
         } scan;
     } u;
 };
+
+int ft_nmap(char **args, unsigned int nbr_args, t_options *opts);
 
 #endif

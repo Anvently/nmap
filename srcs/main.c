@@ -2,11 +2,11 @@
 #include <netinet/ip.h>
 #include <nmap.h>
 
-const char *executable_name = "ft_ping";
+const char *executable_name = "ft_nmap";
 
 static const char help[] = "\n\
-Usage: ft_ping [OPTION...] HOST ...\n\
-Send ICMP ECHO_REQUEST packets to network hosts.\n\
+Usage: ft_nmap [OPTION...] HOST ...\n\
+Scan host port and more.\n\
 \n\
   -e, --interface               use specified interface\n\
   -n, --numeric                 never do DNS resolution\n\
@@ -29,30 +29,29 @@ Send ICMP ECHO_REQUEST packets to network hosts.\n\
       --file                    read hostname from a file\n\
   -?, --help                    give this help list\n";
 
-static const char no_argument[] = "ft_ping: missing host operand\n\
-Try 'ft_ping -?' for more information.";
+static const char no_argument[] = "ft_nmap: missing host operand\n\
+Try 'ft_nmap -?' for more information.";
+
+static t_options dft_options = {.size = 0,
+                                .enabled_scan.int_representation =
+                                    0xFFFF >> (16 - SCAN_NBR),
+                                .ports = "1-1024",
+                                .threads = 16,
+                                .ttl = 64};
 
 int main(int argc, char **argv) {
-    t_options options = {.size = 56,
-                         .pattern = NULL,
-                         .ttl = 255,
-                         .tos = IPTOS_CLASS_DEFAULT,
-                         .linger_timeout = 1,
-                         .interval = -1.f};
+    t_options options = dft_options;
     unsigned int nbr_args = 0;
-    printf("port_info=%lu\n"
-           "scan_result=%lu\n",
-           sizeof(struct port_info), sizeof(struct scan_result));
     if (ft_options_retrieve(argc - 1, argv + 1, &options, &nbr_args))
         return (2);
     if (options.help) {
         ft_dprintf(1, "%s\n", help);
         return (0);
     }
-    if (nbr_args == 0) {
+    if (nbr_args == 0 && options.file == NULL) {
         ft_dprintf(1, "%s\n", no_argument);
         return (1);
     }
 
-    return (0);
+    return (ft_nmap(argv + 1, nbr_args, &options));
 }
