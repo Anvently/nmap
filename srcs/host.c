@@ -18,6 +18,8 @@ void hosts_free(struct host **hosts) {
     host = *hosts;
     nbr_host = ft_vector_size(*hosts);
     while (nbr_host--) {
+        if (host->hostname_rsvl)
+            free(host->hostname_rsvl);
         if (host->scans[SCAN_PING].state != SCAN_DISABLE)
             free(host->scans[SCAN_PING].ports);
         for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {

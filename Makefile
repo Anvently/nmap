@@ -4,7 +4,7 @@ INCLUDES	=	includes/
 SRCS_FOLDER	=	srcs/
 OBJS_FOLDER	=	.objs/
 
-SRCS_FILES	=	main.c  parse_args.c error.c main_thread.c \
+SRCS_FILES	=	main.c  parse_args.c main_thread.c \
 				debug.c host.c result.c dns.c ping.c worker.c \
 				input.c
 

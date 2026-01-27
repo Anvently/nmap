@@ -146,6 +146,7 @@ static bool assign_task(struct host *host, struct task_handle *task) {
         task->data.dns.hostname_rslv = NULL;
         task->data.dns.addr = (struct sockaddr_in){0};
         task->data.dns.hostname = host->hostname;
+        task->error = &host->scans[SCAN_DNS].error;
         task->host = host;
         return (true);
 
@@ -159,6 +160,7 @@ static bool assign_task(struct host *host, struct task_handle *task) {
         task->timeout = (struct timeval){.tv_sec = PING_TIMEOUT, .tv_usec = 0};
         task->data.ping.daddr = host->addr.sin_addr;
         task->data.ping.rslt = &host->scans[SCAN_PING].ports[80];
+        task->error = &host->scans[SCAN_PING].error;
         task->data.ping.saddr = (struct sockaddr_in){0};
         task->data.ping.sock_eph = -1;
         task->data.ping.sock_icmp = -1;

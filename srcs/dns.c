@@ -1,26 +1,75 @@
+#include <arpa/inet.h>
+#include <errno.h>
+#include <error.h>
+#include <memory.h>
+#include <netdb.h>
+#include <netinet/ip.h>
 #include <nmap.h>
+#include <string.h>
 
-int init(struct task_handle *data) {
-    (void)data;
+/*
+DNS SCAN
+Abstraction to simply resolve peer ip address from given hostname, also perform
+reverse dns resolution on resolved address.
+ */
+
+static void dns_error(struct nmap_error **error_ptr, const char *func_fail,
+                      const char *detail) {
+    struct nmap_error *error;
+    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
+    if (error == NULL)
+        return;
+    strlcpy(error->u.dns.func_fail, func_fail, sizeof(error->u.dns.func_fail));
+    strlcpy(error->u.dns.description, detail, sizeof(error->u.dns.description));
+    error->error = errno;
+}
+
+static int get_ip_name(struct sockaddr_in *addr, char **rslt,
+                       struct nmap_error **error_ptr) {
+    *rslt = calloc(128, 1);
+    if (getnameinfo((struct sockaddr *)addr, sizeof(*addr), *rslt, 128, NULL, 0,
+                    0)) {
+        dns_error(error_ptr, "getnameinfo", "");
+        return (1);
+    }
+    return (0);
+}
+
+static int fill_addr_info(const char *hostname, struct sockaddr_in *rslt,
+                          struct nmap_error **error_ptr) {
+    struct addrinfo hints = {
+        .ai_family = AF_INET,
+        .ai_socktype = 0,
+        .ai_flags = AI_CANONNAME,
+        .ai_protocol = IPPROTO_IP,
+    };
+    struct addrinfo *res;
+    switch (getaddrinfo(hostname, NULL, &hints, &res)) {
+    case 0:
+        break;
+    case EAI_NONAME:
+        dns_error(error_ptr, "fill_addr_info", "unknown host");
+        return (1);
+    default:
+        dns_error(error_ptr, "fill_addr_info", "");
+        return (1);
+    }
+    *rslt = *(struct sockaddr_in *)res->ai_addr;
+    freeaddrinfo(res);
     return (0);
 }
 
 int dns_packet_send(struct task_handle *data) {
-    (void)data;
-    return (0);
-}
-
-int packet_rcv(struct task_handle *data) {
-    (void)data;
-    return (0);
-}
-
-int packet_timeout(struct task_handle *data) {
-    (void)data;
-    return (0);
-}
-
-int release(struct task_handle *data) {
-    (void)data;
+    if (fill_addr_info(data->data.dns.hostname, &data->data.dns.addr,
+                       data->error)) {
+        data->flags.error = 1;
+        return (1);
+    }
+    if (get_ip_name(&data->data.dns.addr, &data->data.dns.hostname_rslv,
+                    data->error)) {
+        data->flags.error = 1;
+        return (1);
+    }
+    data->flags.done = 1;
     return (0);
 }

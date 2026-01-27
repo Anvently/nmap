@@ -188,11 +188,11 @@ struct scan_result {
     struct port_info *ports;
     // Error related to host (for ping or DNS scan for example)
     struct nmap_error *error;
-} __attribute__((__packed__));
+};
 
 struct host {
     struct sockaddr_in addr;
-    const char *hostname_rsvl; // FQDN - resolved host with getnameinfo()
+    char *hostname_rsvl; // FQDN - resolved host with getnameinfo()
     const char *hostname;
     enum host_state state;
     struct scan_result scans[SCAN_NBR];
@@ -203,7 +203,7 @@ struct dns_data {
     const char *hostname;
     struct sockaddr_in addr;
     // Allocated by worker, copied and freed by main thread
-    const char *hostname_rslv;
+    char *hostname_rslv;
 };
 
 struct ping_data {
@@ -285,10 +285,11 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
 };
 
 struct nmap_error {
-    int error;
-    union { // Examples
+    int error; // errno number
+    union {    // Examples
         struct {
-
+            char func_fail[16];
+            char description[64];
         } dns;
         struct {
             struct icmphdr icmphdr;
