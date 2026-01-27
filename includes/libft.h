@@ -212,6 +212,7 @@ typedef struct {
     size_t len;
     size_t capacity;
     size_t type_size;
+    bool dont_shrink;
 } t_vector_header;
 
 typedef struct {
@@ -231,6 +232,7 @@ int ft_vector_insert(t_vector **vector_addr, size_t pos, const void *data);
 int ft_vector_insert_range(t_vector **vector_addr, size_t pos, const void *data,
                            size_t n);
 int ft_vector_resize(t_vector **vector_addr, size_t size);
+void ft_vector_set_shrink(t_vector *vector, bool value);
 void ft_vector_iter(t_vector *vector, void (*f)(void *));
 
 void ft_vector_free(t_vector **vector_addr);

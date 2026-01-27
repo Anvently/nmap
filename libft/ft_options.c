@@ -190,7 +190,10 @@ static int ft_parse_option_long(char **next_arg, char *arg,
     return (ret);
 }
 
-int check_options(t_options *options) { return (0); }
+int check_options(t_options *options) {
+    (void)options;
+    return (0);
+}
 
 /// @brief Extract options in ```args``` and replaced them with ```NULL```.
 /// @param nbr

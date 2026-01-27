@@ -57,7 +57,8 @@ static inline int _has_capacity(t_vector_header *header) {
 }
 
 static inline int _has_over_capacity(t_vector_header *header) {
-    return (header->len < header->capacity / 4);
+    return (header->dont_shrink == true ? false
+                                        : header->len < (header->capacity / 4));
 }
 
 /// @brief Allocate a vector.
@@ -251,6 +252,14 @@ void ft_vector_iter(t_vector *vector, void (*f)(void *)) {
     for (size_t i = 0; i < header->len; i++) {
         f(((char *)vector + i * header->type_size));
     }
+}
+
+void ft_vector_set_shrink(t_vector *vector, bool value) {
+    t_vector_header *header;
+    header = _get_vector_header(vector);
+    if (!header)
+        return;
+    header->dont_shrink = !value;
 }
 
 void ft_dump_vector(t_vector *vector, bool print_capacity) {

@@ -4,257 +4,409 @@
 #include <nmap.h>
 #include <string.h>
 
-void print_host(struct host *host);
+struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts);
+void hosts_free(struct host **hosts);
 
-/// @brief Should not have to be called.
-/// @param hosts
-static void free_hosts(struct host **hosts) {
-    size_t nbr_host;
-    struct host *host;
+void print_host_result(struct host *host, t_options *opts);
+void print_scan_result(struct scan_result *result, t_options *opts);
+void print_task_result(struct task_handle *task);
 
-    if (*hosts == NULL)
-        return;
-    host = *hosts;
-    nbr_host = ft_vector_size(*hosts);
-    while (nbr_host--) {
-        if (host->scans[SCAN_PING].state != SCAN_DISABLE)
-            free(host->scans[SCAN_PING].ports);
-        for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
-            if (host->scans[i].state != SCAN_DISABLE) {
-                for (unsigned j = 0; j < host->scans[i].nbr_port; j++) {
-                    if (host->scans[i].ports[j].error)
-                        free(host->scans[i].ports[j].error);
-                }
-                free(host->scans[i].ports);
-            }
+void *worker_routine(void *data);
+
+void user_input(struct host *vec_hosts, struct worker_handle *vec_workers,
+                t_options *opts);
+
+static struct host *find_available_host(struct host *vec_hosts) {
+
+    const size_t vec_size = ft_vector_size(vec_hosts);
+    // struct scan_result *udp_scan;
+
+    for (unsigned int i = 0; i < vec_size; i++) {
+        switch (vec_hosts[i].state) {
+        case STATE_PENDING_RESOLVE:
+        case STATE_PING_PENDING:
+            return (&vec_hosts[i]);
+
+        default: // For now DNS and ping only
+            continue;
+
+            // case STATE_SCAN_PENDING:
+            //     return (&vec_hosts[i]);
+
+            // case STATE_SCAN_RUNNING:
+            //     // If UDP disabled
+            //     udp_scan = &vec_hosts[i].scans[SCAN_UDP];
+            //     if (udp_scan->state == SCAN_DISABLE || udp_scan->state ==
+            //     SCAN_DONE)
+            //         continue;
+            //     if (udp_scan->remaining > 0)
+            //         return &vec_hosts[i];
+            //     break;
+
+            // default:
+            //     continue;
         }
-        host++;
-    }
-    ft_vector_free((t_vector **)hosts);
-}
-
-static struct port_info *allocate_ports(uint16_t *vec_ports,
-                                        bool dont_randomize) {
-    const uint16_t nbr_port = (uint16_t)ft_vector_size(vec_ports);
-    struct port_info *ports = calloc(nbr_port, sizeof(struct port_info));
-
-    for (uint16_t i = 0; i < nbr_port; i++) {
-        ports[i].port = vec_ports[i];
-    }
-    if (dont_randomize || nbr_port < 2)
-        return (ports);
-    for (uint16_t i = nbr_port - 1; i > 0; i--) {
-        uint32_t j = (uint32_t)(rand() % (i + 1));
-        ft_memswap(ports + i, ports + j, sizeof(struct port_info));
-    }
-    return (ports);
-}
-
-/// @brief Check if ```host``` is matching another host in ```vec_hosts```.
-/// Check for hostname match AND ipv4 match. Handle the case where ```host```
-/// itself is already contained within ```hosts_vec```
-/// @param hosts
-/// @param host
-/// @return ```duplicated host``` if host has a doubloon.
-static struct host *check_double_host(struct host *vec_hosts,
-                                      struct host *host) {
-    const unsigned int nbr_host = ft_vector_size(vec_hosts);
-    for (unsigned int i = 0; i < nbr_host; i++) {
-        if (&vec_hosts[i] == host || vec_hosts[i].state == STATE_DOUBLOON)
-            continue; // case where host is already stored in vector or multiple
-                      // doubloons
-        if (strcmp(host->hostname, vec_hosts[i].hostname) == 0)
-            return (&vec_hosts[i]);
-        // Only compare ipv4 address after dns resolution (0.0.0.0 at first)
-        if (vec_hosts[i].state >= STATE_RESOLVED &&
-            memcmp(&host->addr, &vec_hosts[i].addr, sizeof(host->addr)) == 0)
-            return (&vec_hosts[i]);
     }
     return (NULL);
 }
 
-/// @brief Generate a pre-filled host structure (with ports structure allocated)
-/// and push it to vector
-/// @param hosts
-/// @param hostname
-/// @param vec_ports
-/// @param opts
-/// @return ```0``` for success, currently exit on every possible error.
-static int add_host(struct host **hosts, const char *hostname,
-                    uint16_t *vec_ports, t_options *opts) {
-    struct host host = {.hostname = hostname};
-    struct host *doubloon_match;
-    unsigned int nbr_port = ft_vector_size(vec_ports);
+/// @brief May be recursively called if state has changed
+/// @param host
+/// @return ```1``` if state is a terminal state, else ```0```
+static int switch_state(struct host *host) {
+    switch (host->state) {
+    case STATE_DOUBLOON:
+    case STATE_ERROR:
+    case STATE_DOWN:
+    case STATE_PING_TIMEOUT:
+    case STATE_RESOLVE_FAILED:
+    case STATE_SCAN_DONE:
+        return (1);
 
-    // Need to check for doubloons
-    doubloon_match = check_double_host(*hosts, &host);
-    if (doubloon_match) {
-        host.state = STATE_DOUBLOON;
-        if (ft_vector_push((t_vector **)hosts, &host))
-            error(-1, errno, "pushing a new host in vector");
+    case STATE_PENDING_RESOLVE:
+    case STATE_PING_PENDING:
+    case STATE_SCAN_PENDING:
         return (0);
-    }
 
-    host.state = STATE_PENDING_RESOLVE;
-    // DNS scan - always
-    host.scans[SCAN_DNS] = (struct scan_result){
-        .remaining = 0, .type = SCAN_DNS, .state = SCAN_PENDING, .ports = NULL};
+    case STATE_RESOLVING:
+        if (host->scans[SCAN_DNS].error)
+            host->state = STATE_RESOLVE_FAILED;
+        else
+            host->state = STATE_RESOLVED;
+        return (switch_state(host));
 
-    // Ping scan
-    host.scans[SCAN_PING] = (struct scan_result){
-        .remaining = opts->skip_discovery ? 0 : 1,
-        .nbr_port = opts->skip_discovery ? 0 : 1,
-        .type = SCAN_PING,
-        .state = opts->skip_discovery ? SCAN_DONE : SCAN_PENDING};
-    host.scans[SCAN_PING].ports = calloc(1, sizeof(struct port_info));
-    if (host.scans[SCAN_PING].ports == NULL)
-        error(-1, errno, "allocating port_info structure for ping scan");
-    host.scans[SCAN_PING].ports->port = 80;
-    if (opts->skip_discovery) {
-        host.scans[SCAN_PING].ports->reason.type = REASON_USER_INPUT;
-    }
+    case STATE_RESOLVED:
+        if (host->scans[SCAN_PING].state == SCAN_PENDING)
+            host->state = STATE_PING_PENDING;
+        else
+            host->state = STATE_UP;
+        return (switch_state(host));
 
-    // Port scans
-    if (opts->list == false) {
-        for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
+    case STATE_PING_SENT:
+        switch (host->scans[SCAN_PING].ports[0].reason.type) {
+        case REASON_NO_RESPONSE:
+            host->state = STATE_PING_TIMEOUT;
+            break;
 
-            host.scans[i] = (struct scan_result){
-                .remaining = 0,
-                .nbr_port = 0,
-                .state = SCAN_DISABLE,
-                .type = i == SCAN_UDP && opts->enabled_scan.raw_udp
-                            ? SCAN_RAW_UDP
-                            : i};
+        case REASON_HOST_UNREACH:
+            host->state = STATE_DOWN;
+            break;
 
-            // If scan is enabled
-            if (((uint16_t)opts->enabled_scan.int_representation &
-                 ((uint16_t)1 << i)) != 0 ||
-                (i == SCAN_UDP && opts->enabled_scan.raw_udp)) {
+        default:
+            host->state = STATE_UP;
+        }
+        return (switch_state(host));
 
-                host.scans[i].state = SCAN_PENDING;
-                host.scans[i].nbr_port = nbr_port;
-                host.scans[i].remaining = nbr_port;
+    case STATE_UP:
+        for (uint8_t i = SCAN_SYN; i < SCAN_NBR; i++) {
+            if (host->scans[i].state != SCAN_DISABLE) {
+                host->state = STATE_SCAN_PENDING;
+                break;
+            }
+            host->state = STATE_SCAN_DONE;
+        }
+        return (switch_state(host));
 
-                host.scans[i].ports =
-                    allocate_ports(vec_ports, opts->sequential);
-                if (host.scans[i].ports == NULL)
-                    error(-1, errno,
-                          "allocating port_info structure for scan %hhu", i);
+    case STATE_SCAN_RUNNING:
+        host->state = STATE_SCAN_DONE;
+        for (uint8_t i = SCAN_SYN; i < SCAN_NBR; i++) {
+            if (host->scans[i].state == SCAN_PENDING)
+                host->state = STATE_SCAN_PENDING;
+            if (host->scans[i].state == SCAN_RUNNING) {
+                host->state = STATE_SCAN_RUNNING;
+                return (0);
             }
         }
-    }
-
-    // Adding to vector
-    if (ft_vector_push((t_vector **)hosts, &host))
-        error(-1, errno, "pushing a new host in vector");
-    return (0);
-}
-
-static int cmp(void *a, void *b) {
-    if (*(uint16_t *)a < *(uint16_t *)b)
-        return (-1);
-    else
-        return (1);
-}
-
-static uint16_t find_duplicate_ports(uint16_t *ports, unsigned int n) {
-    for (unsigned int i = 0; i < n; i++) {
-        if (i + 1 < n && ports[i] == ports[i + 1])
-            return (ports[i]);
+        return (switch_state(host));
     }
     return (0);
 }
 
-/// @brief Push a port into vector, while checking for ```MAX_PORT_NBR```
-/// @param vec_ports
-/// @param port
-/// @return ```0``` for success, ```1``` if limits reached
-static int push_port(uint16_t *vec_ports, uint16_t port) {
-    if (ft_vector_size(vec_ports) >= MAX_PORT_NBR)
-        return (1);
-    ft_vector_push((t_vector **)&vec_ports, &port);
-    return (0);
+int dns_packet_send(struct task_handle *data);
+int ping_init(struct task_handle *data);
+int ping_packet_send(struct task_handle *data);
+int ping_packet_rcv(struct task_handle *data);
+int ping_packet_timeout(struct task_handle *data);
+int ping_release(struct task_handle *data);
+
+/// @brief Fill ```task``` with an available task in ```host```
+/// @param host
+/// @param task
+/// @return ```false``` if no available task
+static bool assign_task(struct host *host, struct task_handle *task) {
+    switch (host->state) {
+    case STATE_PENDING_RESOLVE:
+        task->scan_type = SCAN_DNS;
+        task->init = NULL;
+        task->packet_rcv = NULL;
+        task->packet_timeout = NULL;
+        task->release = NULL;
+        task->packet_send = dns_packet_send;
+        task->timeout = (struct timeval){0};
+        task->data.dns.hostname_rslv = NULL;
+        task->data.dns.addr = (struct sockaddr_in){0};
+        task->data.dns.hostname = host->hostname;
+        task->host = host;
+        return (true);
+
+    case STATE_PING_PENDING:
+        task->scan_type = SCAN_PING;
+        task->init = ping_init;
+        task->packet_send = ping_packet_send;
+        task->packet_rcv = ping_packet_rcv;
+        task->packet_timeout = ping_packet_timeout;
+        task->release = ping_release;
+        task->timeout = (struct timeval){.tv_sec = PING_TIMEOUT, .tv_usec = 0};
+        task->data.ping.daddr = host->addr.sin_addr;
+        task->data.ping.rslt = &host->scans[SCAN_PING].ports[80];
+        task->data.ping.saddr = (struct sockaddr_in){0};
+        task->data.ping.sock_eph = -1;
+        task->data.ping.sock_icmp = -1;
+        task->data.ping.sock_tcp = -1;
+        task->host = host;
+        return (true);
+
+    default: // For now DNS and PING only
+
+        return (false);
+    }
 }
 
-static uint16_t *parse_ports(const char *ports) {
-    uint16_t *vec_ports = ft_vector_create(sizeof(uint16_t), MAX_PORT_NBR),
-             duplicate;
-    unsigned long min, max;
-    const char *ptr = ports, *element;
-
-    if (vec_ports == NULL)
-        error(-1, errno, "allocating ports vector");
-    while (*ptr) {
-        element = ptr;
-        if (ft_strtoul_base(ptr, &min, &ptr, "0123456789") ||
-            min > UINT16_MAX || min == 0)
-            error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
-                  element);
-        if (*ptr == ',' || *ptr == '\0') {
-            if (push_port(vec_ports, (uint16_t)min))
-                error(1, errno,
-                      "Invalid port range `%s' : exceed number of ports "
-                      "allowed (%u)",
-                      ports, MAX_PORT_NBR);
-            if (*ptr == ',')
-                ptr++;
-        } else if (*ptr == '-') {
-            ++ptr;
-            if (*ptr == '\0' ||
-                ft_strtoul_base(ptr, &max, &ptr, "0123456789") ||
-                max > UINT16_MAX || max == 0)
-                error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
-                      element);
-            for (unsigned int i = min; i <= max; i++) {
-                if (push_port(vec_ports, (uint16_t)i))
-                    error(1, errno,
-                          "Invalid port range `%s' : exceed number of ports "
-                          "allowed (%u)",
-                          ports, MAX_PORT_NBR);
-            }
-            if (*ptr == ',')
-                ptr++;
+/// @brief Must be called once task initialization succeed and worker thread was
+/// launched. Host status will be be updated.
+/// @param task
+static void confirm_task(struct task_handle *task) {
+    struct host *host = task->host;
+    switch (task->scan_type) {
+    case SCAN_DNS:
+        host->state = STATE_RESOLVING;
+        host->current_scan.dns = 1;
+        host->scans[SCAN_DNS].state = SCAN_RUNNING;
+        break;
+    case SCAN_PING:
+        host->state = STATE_PING_SENT;
+        host->current_scan.ping = 1;
+        host->scans[SCAN_PING].state = SCAN_RUNNING;
+        task->data.ping.rslt->state = PORT_SCANNING;
+        break;
+    default:
+        host->state = STATE_SCAN_RUNNING;
+        if (task->scan_type != SCAN_RAW_UDP) {
+            host->current_scan.int_representation |= (1 << task->scan_type);
+            host->scans[task->scan_type].state = SCAN_RUNNING;
         } else {
-            error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
-                  element);
+            host->current_scan.raw_udp = 1;
+            host->scans[SCAN_UDP].state = SCAN_RUNNING;
+        }
+        break;
+    }
+}
+
+/// @brief Count how many host are in given state or above
+/// @param vec_hosts
+/// @param opts
+/// @return
+unsigned int count_state(struct host *vec_hosts, enum host_state state) {
+    const size_t nbr_host = ft_vector_size(vec_hosts);
+    unsigned int n = 0;
+    for (unsigned int i = 0; i < nbr_host; i++) {
+        if (vec_hosts->state >= state)
+            n++;
+    }
+    return (n);
+}
+
+/// @brief Return ```false``` if any host have some task left to do.
+/// @param vec_host
+/// @return
+static bool check_hosts_done(struct host *vec_hosts) {
+    size_t i = ft_vector_size(vec_hosts);
+    while (i--) {
+        switch (vec_hosts[i].state) {
+        case STATE_PENDING_RESOLVE:
+        case STATE_RESOLVING:
+        case STATE_PING_PENDING:
+        case STATE_PING_SENT:
+        case STATE_SCAN_PENDING:
+        case STATE_SCAN_RUNNING:
+            return (false);
+
+        default:
+            break;
         }
     }
-    max = ft_vector_size(vec_ports);
-    if (max == 0)
-        error(1, 0, "no ports");
-    if (ft_vector_resize((t_vector **)&vec_ports, max))
-        error(-1, errno, "shrinking ports vector");
-    if (ft_merge_sort(vec_ports, max, cmp, false))
-        error(-1, errno, "sorting port vector");
-    duplicate = find_duplicate_ports(vec_ports, max);
-    if (duplicate)
-        error(1, 0, "duplicate port %hu", duplicate);
-    return (vec_ports);
+    return (true);
+}
+
+/* Main loop
+1. If worker < MAX_WORKER : find an available host (state >= 3 && state <
+12)
+2. If host
+    - allocate and initialize tasks for workers
+        - if UDP scan enabled and not done :
+            - assign MAX_TASK_WORKER - other_task? - remaining_udp_port
+        - else:
+            - assign a single task
+    - create a worker with tasks assigned
+3. Non-blocking join :
+    - if join, decrement worker, and update host state.
+        - if -vv is one, prints task result
+    - if a scan is done and -v, prints it
+    - if a host is done, prints it
+    - if all state done, break loop
+
+*/
+
+static void handle_worker_result(struct worker_handle *worker, void *ret,
+                                 t_options *opts) {
+    (void)ret;
+    struct task_handle task;
+    struct scan_result *scan;
+
+    unsigned int i = ft_vector_size(worker->tasks_vec);
+    while (i--) {
+        task = worker->tasks_vec[i];
+        scan = &task.host->scans[task.scan_type];
+        scan->assigned_worker--;
+        if (scan->assigned_worker == 0) { // UDP scan may not fall through
+            scan->state = SCAN_DONE;
+            if (scan->remaining > 0)
+                scan->state = SCAN_PENDING;
+            else { // Scan done
+                if (opts->verbose > 0) {
+                    fprintf(stdout, "Results for host %s\n",
+                            task.host->hostname);
+                    print_scan_result(scan, opts);
+                }
+            }
+        }
+        if (scan->state != SCAN_RUNNING) {
+            task.host->current_scan.int_representation &= ~(1 << scan->type);
+        }
+        if (scan->type == SCAN_DNS) {
+            task.host->addr = task.data.dns.addr;
+            task.host->hostname_rsvl = task.data.dns.hostname_rslv;
+        }
+        if (switch_state(task.host))
+            print_host_result(task.host, opts);
+        if ((task.error && opts->verbose > 0) || opts->verbose > 1)
+            print_task_result(&task);
+    }
+}
+
+/// @brief Check if any worker wants to join, if so, handle every task it had
+/// and update host status
+/// @param workers_vec
+/// @param opts
+static void loop_worker_state(struct worker_handle *workers_vec,
+                              t_options *opts) {
+    void *ret;
+    size_t i = ft_vector_size(workers_vec);
+    while (i--) {
+        if (workers_vec[i].state != WORKER_DONE)
+            continue;
+        if (pthread_join(workers_vec[i].tid, &ret))
+            error(-1, errno, "joining thread");
+        handle_worker_result(&workers_vec[i], ret, opts);
+        ft_vector_free((t_vector **)&workers_vec->tasks_vec);
+        ft_vector_erase((t_vector **)&workers_vec,
+                        i); // No reallocation possible
+    }
+}
+
+/// @brief Initialize, allocate and run worker
+/// @return ```NULL``` if no worker could be allocated, because of task
+/// initialisation failure or no available task, else ```address``` of allocated
+/// worker in vector
+static struct worker_handle *init_worker(struct host *hosts_vec,
+                                         struct worker_handle *workers_vec) {
+    struct worker_handle worker = {0}, *worker_addr;
+    struct task_handle task;
+    struct host *host;
+    bool ret;
+
+    host = find_available_host(hosts_vec);
+    if (host == NULL)
+        return (NULL);
+    worker.tasks_vec =
+        ft_vector_create(sizeof(struct task_handle), MAX_TASK_WORKER);
+    do {
+        task = (struct task_handle){0};
+        ret = assign_task(host, &task);
+        if (ret == false) { // This host has no more task
+            host = find_available_host(hosts_vec);
+            if (host)
+                ret = true;
+            continue;
+        }
+        if (task.scan_type == SCAN_DNS) {
+            if (ft_vector_size(worker.tasks_vec) >
+                0) // ignore dns task if it will block another task
+                continue;
+            ret = false; // DNS task will be executed by a dedicated worker
+        }
+        if (task.init && task.init(&task))
+            break;
+        // Adds task to worker
+        ft_vector_push((t_vector **)&worker.tasks_vec, &task);
+        confirm_task(&task); // Update host status
+
+    } while (ret == true && ft_vector_size(worker.tasks_vec) < MAX_TASK_WORKER);
+    if (ft_vector_resize((t_vector **)&worker.tasks_vec,
+                         ft_vector_size(worker.tasks_vec)))
+        // Task were confirmed so we cant just return
+        error(-1, errno, "failed to shrink task vectors");
+
+    ft_vector_push((t_vector **)&workers_vec, &worker);
+    worker_addr = &workers_vec[ft_vector_size(workers_vec) - 1];
+    if (pthread_create(&worker_addr->tid, NULL, worker_routine, worker_addr))
+        error(-1, errno, "failed to create worker thread");
+    return (worker_addr);
+}
+
+static int main_loop(struct host *vec_hosts, t_options *opts) {
+    unsigned int nbr_workers;
+    struct worker_handle *workers_vec =
+        ft_vector_create(sizeof(struct worker_handle), MAX_WORKER);
+
+    if (workers_vec == NULL)
+        error(-1, errno, "allocating workers vector");
+    // Disable vector shrinking to prevent any reallocation
+    ft_vector_set_shrink(workers_vec, false);
+    while (1) {
+        user_input(vec_hosts, workers_vec, opts);
+        usleep(1000); // 1ms sleep
+        loop_worker_state(workers_vec, opts);
+        // If all state done, break_loop
+        if (check_hosts_done(vec_hosts) == true)
+            break;
+        // Find available host
+        nbr_workers = ft_vector_size(workers_vec);
+        if (nbr_workers >= MAX_WORKER)
+            continue;
+        init_worker(vec_hosts, workers_vec);
+    }
+    ft_vector_free((t_vector **)&workers_vec);
+    return (0);
 }
 
 /// @brief
-/// @param args equivalent to ```argv + 1```, option argument are replaced with
+/// @param args equivalent to ```argv + 1```, option argument are replaced
+/// with
 /// ```NULL```
 /// @param nbr_args number of given ```args``` in args
 /// @param options
 /// @return ```0``` for success
 int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
     int ret = 0;
-    uint16_t *vec_ports = parse_ports(opts->ports);
-    struct host *vec_hosts = ft_vector_create(sizeof(struct host), 1);
-
-    if (vec_hosts == NULL)
-        error(-1, errno, "allocating host vector");
-    while (nbr_args) {
-        if (*args != NULL) {
-            if ((ret = add_host(&vec_hosts, *args, vec_ports, opts)))
-                break;
-            nbr_args--;
-        }
-        args++;
+    struct host *vec_hosts;
+    // main loop
+    vec_hosts = hosts_create(args, nbr_args, opts);
+    ret = main_loop(vec_hosts, opts);
+    if (opts->verbose) { // Reprint every host result at the end
+        for (unsigned int i = 0; i < ft_vector_size(vec_hosts); i++)
+            print_host_result(&vec_hosts[i], opts);
     }
-    ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
-    free_hosts(&vec_hosts);
-    ft_vector_free((t_vector **)&vec_ports);
+    hosts_free(&vec_hosts);
     return (ret);
 }

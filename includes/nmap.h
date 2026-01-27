@@ -1,6 +1,8 @@
 #include <libft.h>
 #include <netinet/ip_icmp.h>
 #include <poll.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <sys/time.h>
 
@@ -62,7 +64,7 @@ union scan_list {
 /// @brief ```t_options``` typedef is already defined as an alias for this
 /// struct in libft
 struct s_options {
-    bool verbose;
+    unsigned int verbose;
     bool help;
     unsigned int size;
     bool numeric;
@@ -91,9 +93,8 @@ struct s_options {
 enum host_state {
     STATE_DOUBLOON = 0, // Host was inputed twice
     STATE_ERROR,        // Error received
-    STATE_DOWN,         // Ping failed (host unreachable)
 
-    STATE_PENDING_RESOLVE = 3, // Was inputed by user // No worker assigned
+    STATE_PENDING_RESOLVE, // Was inputed by user // No worker assigned
 
     // blocking
     // DNS
@@ -105,6 +106,7 @@ enum host_state {
     STATE_PING_PENDING, // Need to send a ping
     STATE_PING_SENT,    // Waiting for ping response
     STATE_PING_TIMEOUT, // No response after timeout
+    STATE_DOWN,         // Ping failed (host unreachable)
     STATE_UP,           // Ping sucedeed
 
     // Scan
@@ -151,14 +153,15 @@ enum result_reason {
     REASON_SYN_ACK,
     REASON_RST,
     REASON_PORT_UNREACH,
+    REASON_HOST_UNREACH,
     REASON_CONN_REFUSED,
     REASON_USER_INPUT,
     REASON_NO_RESPONSE,
 } __attribute__((__packed__));
 
 struct port_info {
-    uint16_t port; // 1-65535
-    enum port_state state;
+    uint16_t port;                 // 1-65535
+    _Atomic enum port_state state; // !!! Atomic operation only !!!
     struct {
         uint8_t ttl;
         enum result_reason type;
@@ -174,6 +177,7 @@ struct scan_result {
     // An unemployed worker can directly choose the port `ports[remaining - 1]`,
     // and decrement remaining
     uint16_t remaining;
+    uint16_t assigned_worker; // Number of worker assign to this scan
 
     uint16_t nbr_port;
     // Allocated array, (randomized) ports, the main thread can only
@@ -196,7 +200,10 @@ struct host {
 };
 
 struct dns_data {
-    const char **hostname_rslv_ptr; // &host->hostname_rsvl
+    const char *hostname;
+    struct sockaddr_in addr;
+    // Allocated by worker, copied and freed by main thread
+    const char *hostname_rslv;
 };
 
 struct ping_data {
@@ -205,7 +212,7 @@ struct ping_data {
     int sock_icmp;            // icmp socket
     struct in_addr daddr;     // peer address
     struct sockaddr_in saddr; // tcp
-    struct scan_result *rslt;
+    struct port_info *rslt;
 };
 
 struct tcp_data {           // Used by SYN, ACK, NULL, XMAS, FIN
@@ -242,15 +249,17 @@ struct task_handle {
 
     union task_data data;
     struct timeval timeout;
-    // Called at beginning of thread
+    struct host *host; // Host associated to the task
+
+    // MAIN_THREAD : Called at beginning of thread
     int (*init)(struct task_handle *data);
-    // Called when send_state is toggled
+    // WORKER : Called when send_state is toggled
     int (*packet_send)(struct task_handle *data);
-    // Called when main_rcv or icmp_rcv is toggled
+    // WORKER : Called when main_rcv or icmp_rcv is toggled
     int (*packet_rcv)(struct task_handle *data);
-    // Called when timeout is toggled
+    // WORKER : Called when timeout is toggled
     int (*packet_timeout)(struct task_handle *data);
-    // Called when done or error is toggled
+    // WORKER : Called when done or error is toggled
     int (*release)(struct task_handle *data);
     struct {
         uint8_t initialized : 1;
@@ -265,9 +274,14 @@ struct task_handle {
     struct nmap_error **error; // Ptr where errors must be registered
 };
 
-struct worker_handle { // 1 worker = 1 thread = 1 polling
-    struct task_handle *tasks;
-    unsigned int nbr_tasks;
+struct worker_handle {             // 1 worker = 1 thread = 1 polling
+    struct task_handle *tasks_vec; // Allocated vector of task
+    _Atomic enum {
+        WORKER_AVAILABLE = 0,
+        WORKER_RUNNING,
+        WORKER_DONE
+    } state __attribute__((__packed__)); // !!! atomic access only !!!
+    pthread_t tid;
 };
 
 struct nmap_error {

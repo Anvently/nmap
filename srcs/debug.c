@@ -50,14 +50,47 @@ const char *reason_strings[] = {
     [REASON_NO_RESPONSE] = "no response",
 };
 
+void print_worker(struct worker_handle *worker);
+void print_task(struct task_handle *task);
 void print_host(struct host *);
+void print_scan_state(struct scan_result *scan);
 void print_verbose_ip(struct iphdr *iphdr);
 void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size);
 void print_verbose_tcp(struct tcphdr *tcphdr);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
 
-static void print_scan_state(struct scan_result *scan) {
+void print_worker(struct worker_handle *worker) {
+    size_t nbr_tasks = ft_vector_size(worker->tasks_vec);
+    printf("Worker %lu (%hhu), %lu tasks:\n", worker->tid, worker->state,
+           nbr_tasks);
+    while (nbr_tasks--) {
+        print_task(&worker->tasks_vec[nbr_tasks]);
+    }
+}
+
+void print_task(struct task_handle *task) {
+    printf("%s scan for host %s (%s), %s%s%s%s%s%s%s ",
+           scan_type_strings[task->scan_type], task->host->hostname,
+           inet_ntoa(task->host->addr.sin_addr),
+           task->flags.initialized ? "In" : "",
+           task->flags.send_state ? "Tx" : "Rx",
+           task->flags.main_rcv ? "In" : "", task->flags.icmp_rcv ? "InC" : "",
+           task->flags.timeout ? "Tim" : "", task->flags.done ? "D" : "",
+           task->flags.error ? "E" : "");
+    switch (task->scan_type) {
+    case SCAN_DNS:
+        break;
+    case SCAN_PING:
+
+        break;
+    default:
+        break;
+    }
+    printf("\n");
+}
+
+void print_scan_state(struct scan_result *scan) {
     printf("%s (%hhu): %s (%hhu)", scan_type_strings[scan->type], scan->type,
            scan_state_strings[scan->state], scan->state);
     if (scan->type > SCAN_DNS)

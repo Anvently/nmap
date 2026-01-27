@@ -117,7 +117,7 @@ t_opt_flag *options_map = &options_list[0];
 
 static int register_verbose(t_options *opt, char *arg) {
     (void)arg;
-    opt->verbose = true;
+    opt->verbose += 1;
     return (0);
 }
 static int register_help(t_options *opt, char *arg) {
