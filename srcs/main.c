@@ -10,7 +10,6 @@ Scan host port and more.\n\
 \n\
   -e, --interface               use specified interface\n\
   -n, --numeric                 never do DNS resolution\n\
-  -R, --resolve                 always do DNS resolution\n\
       --ttl=N                   specify N as time-to-live\n\
   -g, --source-port=N           specify source port\n\
   -v, --verbose                 verbose output\n\
@@ -52,6 +51,5 @@ int main(int argc, char **argv) {
         ft_dprintf(1, "%s\n", no_argument);
         return (1);
     }
-
     return (ft_nmap(argv + 1, nbr_args, &options));
 }

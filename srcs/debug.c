@@ -3,6 +3,7 @@
 #include <netinet/ip_icmp.h>
 #include <netinet/tcp.h>
 #include <nmap.h>
+#include <string.h>
 
 struct pseudo_iphdr {
     uint32_t saddr;
@@ -59,6 +60,20 @@ void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size);
 void print_verbose_tcp(struct tcphdr *tcphdr);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
+void print_nmap_error(struct nmap_error *error, enum nmap_error_type type);
+static void print_dns_error(struct nmap_error *error);
+
+void print_nmap_error(struct nmap_error *error, enum nmap_error_type type) {
+    switch (type) {
+    case ERROR_DNS:
+        print_dns_error(error);
+        break;
+    case ERROR_PING:
+        break;
+    default:
+        break;
+    }
+}
 
 void print_worker(struct worker_handle *worker) {
     size_t nbr_tasks = ft_vector_size(worker->tasks_vec);
@@ -70,16 +85,19 @@ void print_worker(struct worker_handle *worker) {
 }
 
 void print_task(struct task_handle *task) {
-    printf("%s scan for host %s (%s), %s%s%s%s%s%s%s ",
+    printf("%s scan for host %s (%s), %2s%2s%2s%2s%2s%2s%2s%2s ",
            scan_type_strings[task->scan_type], task->host->hostname,
            inet_ntoa(task->host->addr.sin_addr),
            task->flags.initialized ? "In" : "",
-           task->flags.send_state ? "Tx" : "Rx",
-           task->flags.main_rcv ? "In" : "", task->flags.icmp_rcv ? "InC" : "",
-           task->flags.timeout ? "Tim" : "", task->flags.done ? "D" : "",
-           task->flags.error ? "E" : "");
+           task->flags.send_state == 0 ? "Tx" : "Rx",
+           task->flags.main_rcv ? "In" : "", task->flags.icmp_rcv ? "IC" : "",
+           task->flags.timeout ? "Ti" : "", task->flags.done ? "Do" : "",
+           task->flags.error ? "Er" : "", task->flags.cancelled ? "Ca" : "");
     switch (task->scan_type) {
     case SCAN_DNS:
+        if (*task->error) {
+            print_dns_error(*task->error);
+        }
         break;
     case SCAN_PING:
 
@@ -213,4 +231,10 @@ void print_verbose_packet(const char *buffer, size_t len) {
         print_verbose_icmp((struct icmphdr *)(buffer + sizeof(struct iphdr *)),
                            len - sizeof(struct iphdr));
     }
+}
+
+static void print_dns_error(struct nmap_error *error) {
+    printf("%s: %s", error->u.dns.func_fail, error->u.dns.description);
+    if (error->error != 0)
+        printf(" => %s (%d)", strerror(error->error), error->error);
 }

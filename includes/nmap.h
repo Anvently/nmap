@@ -22,7 +22,6 @@ enum OPTIONS {
     OPT_HELP,           // -h, --help
     OPT_SIZE,           // -s, --size
     OPT_NUMERIC,        // -n, --numeric
-    OPT_RESOLVE,        // -R, --resolve
     OPT_INTERFACE,      // -e, --interface
     OPT_PATTERN,        // --data
     OPT_TTL,            // -ttl
@@ -204,6 +203,7 @@ struct dns_data {
     struct sockaddr_in addr;
     // Allocated by worker, copied and freed by main thread
     char *hostname_rslv;
+    bool dont_resolve;
 };
 
 struct ping_data {
@@ -269,7 +269,9 @@ struct task_handle {
         uint8_t icmp_rcv : 1;   // incoming icmp (for ping only)
         uint8_t timeout : 1;    // Timeout has been reached
         uint8_t done : 1;       // Scan complete
-        uint8_t error : 1;      // Error
+        uint8_t error : 1; // Error, ex: syscall error, task will not reassigned
+        uint8_t cancelled : 1; // The task failed to launch as it should, it
+                               // will be later reassigned
     } flags;
     struct nmap_error **error; // Ptr where errors must be registered
 };
@@ -283,6 +285,8 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
     } state __attribute__((__packed__)); // !!! atomic access only !!!
     pthread_t tid;
 };
+
+enum nmap_error_type { ERROR_DNS, ERROR_PING, ERROR_SCAN };
 
 struct nmap_error {
     int error; // errno number

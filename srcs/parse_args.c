@@ -7,7 +7,6 @@ static int register_verbose(t_options *opt, char *);
 static int register_help(t_options *opt, char *);
 static int register_size(t_options *opt, char *);
 static int register_numeric(t_options *opt, char *);
-static int register_resolve(t_options *opt, char *);
 static int register_interface(t_options *opt, char *);
 static int register_pattern(t_options *opt, char *);
 static int register_ttl(t_options *opt, char *);
@@ -43,10 +42,6 @@ t_opt_flag options_list[OPT_NBR] = {
                                  .handler = &register_numeric,
                                  .short_id = 'n',
                                  .long_id = "numeric"},
-    [OPT_RESOLVE] = (t_opt_flag){.arg = ARG_NONE,
-                                 .handler = &register_resolve,
-                                 .short_id = 'R',
-                                 .long_id = "resolve"},
     [OPT_INTERFACE] = (t_opt_flag){.arg = ARG_REQUIRED,
                                    .handler = &register_interface,
                                    .short_id = 'e',
@@ -147,12 +142,6 @@ static int register_numeric(t_options *opt, char *arg) {
     return (0);
 }
 
-static int register_resolve(t_options *opt, char *arg) {
-    (void)arg;
-    (void)opt;
-    opt->resolve = true;
-    return (0);
-}
 static int register_interface(t_options *opt, char *arg) {
     (void)arg;
     (void)opt;

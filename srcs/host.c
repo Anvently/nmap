@@ -20,16 +20,17 @@ void hosts_free(struct host **hosts) {
     while (nbr_host--) {
         if (host->hostname_rsvl)
             free(host->hostname_rsvl);
-        if (host->scans[SCAN_PING].state != SCAN_DISABLE)
-            free(host->scans[SCAN_PING].ports);
-        for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
+        for (unsigned int i = SCAN_DNS; i < SCAN_NBR; i++) {
             if (host->scans[i].state != SCAN_DISABLE) {
                 for (unsigned j = 0; j < host->scans[i].nbr_port; j++) {
                     if (host->scans[i].ports[j].error)
                         free(host->scans[i].ports[j].error);
                 }
-                free(host->scans[i].ports);
+                if (host->scans[i].ports)
+                    free(host->scans[i].ports);
             }
+            if (host->scans[i].error)
+                free(host->scans[i].error);
         }
         host++;
     }
