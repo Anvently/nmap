@@ -282,7 +282,7 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
         WORKER_AVAILABLE = 0,
         WORKER_RUNNING,
         WORKER_DONE
-    } state __attribute__((__packed__)); // !!! atomic access only !!!
+    } state; // !!! atomic access only !!!
     pthread_t tid;
 };
 

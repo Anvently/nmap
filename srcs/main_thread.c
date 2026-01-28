@@ -17,8 +17,8 @@ void print_worker(struct worker_handle *worker);
 
 void *worker_routine(void *data);
 
-void user_input(struct host *vec_hosts, struct worker_handle *vec_workers,
-                t_options *opts);
+void user_input(struct host *vec_hosts,
+                struct worker_handle workers_pool[MAX_WORKER], t_options *opts);
 
 int dns_init(struct task_handle *data);
 int ping_init(struct task_handle *data);
@@ -372,25 +372,25 @@ static void handle_worker_result(struct worker_handle *worker, void *ret,
 /// and update host status
 /// @param workers_vec
 /// @param opts
-static void loop_worker_state(struct worker_handle *workers_vec,
-                              t_options *opts) {
+static void loop_worker_state(struct worker_handle *workers_pool,
+                              unsigned int *nbr_workers, t_options *opts) {
     void *ret;
-    size_t i = ft_vector_size(workers_vec);
-    while (i--) {
-        if (workers_vec[i].state != WORKER_DONE)
+    for (unsigned int i = 0; i < MAX_WORKER && *nbr_workers > 0; i++) {
+        if (workers_pool[i].state != WORKER_DONE)
             continue;
-        if (pthread_join(workers_vec[i].tid, &ret))
+        if (pthread_join(workers_pool[i].tid, &ret))
             error(-1, errno, "joining thread");
         if (opts->verbose > 2) {
             printf("%s", TERM_CL_MAGENTA);
             printf("Worker stopped...\n");
-            print_worker(&workers_vec[i]);
+            print_worker(&workers_pool[i]);
             printf("%s", TERM_CL_RESET);
         }
-        handle_worker_result(&workers_vec[i], ret, opts);
-        ft_vector_free((t_vector **)&workers_vec->tasks_vec);
-        ft_vector_erase((t_vector **)&workers_vec,
-                        i); // No reallocation possible
+        handle_worker_result(&workers_pool[i], ret, opts);
+        ft_vector_free((t_vector **)&workers_pool[i].tasks_vec);
+        workers_pool[i].state = WORKER_AVAILABLE;
+        workers_pool[i].tid = 0;
+        (*nbr_workers)--;
     }
 }
 
@@ -409,32 +409,45 @@ static void cancel_worker(struct worker_handle *worker, t_options *opts) {
     while (i--) {
         handle_task_cancelled(worker->tasks_vec[i]);
     }
+    ft_vector_free((t_vector **)&worker->tasks_vec);
+    worker->tid = 0;
+    worker->state = WORKER_AVAILABLE;
+}
+
+static struct worker_handle *
+find_available_worker(struct worker_handle workers_pool[MAX_WORKER]) {
+    for (unsigned int i = 0; i < MAX_WORKER; i++) {
+        if (workers_pool[i].state == WORKER_AVAILABLE)
+            return (&workers_pool[i]);
+    }
+    return (NULL);
 }
 
 /// @brief Initialize, allocate and run worker
 /// @return ```NULL``` if no worker could be allocated, because of worker
 /// initialisation failure or no available task, else ```address``` of allocated
 /// worker in vector
-static struct worker_handle *init_worker(struct host *hosts_vec,
-                                         struct worker_handle *workers_vec,
-                                         t_options *opts) {
-    struct worker_handle worker = {0}, *worker_addr;
+static struct worker_handle *
+init_worker(struct host *hosts_vec,
+            struct worker_handle workers_pool[MAX_WORKER], t_options *opts) {
+    struct worker_handle *worker = find_available_worker(workers_pool);
     struct task_handle task;
     struct host *host;
     bool ret;
 
+    if (worker == NULL)
+        return (NULL);
     host = find_available_host(hosts_vec, false);
     if (host == NULL)
         return (NULL);
-    worker.tasks_vec =
+    worker->tasks_vec =
         ft_vector_create(sizeof(struct task_handle), MAX_TASK_WORKER);
     do {
         task = (struct task_handle){0};
-        ret = assign_task(host, &task, ft_vector_size(worker.tasks_vec) > 0,
+        ret = assign_task(host, &task, ft_vector_size(worker->tasks_vec) > 0,
                           opts);
         if (ret == false) { // This host has no more task
             host = find_available_host(hosts_vec, true);
-            printf("%p\n", host);
             if (host)
                 ret = true;
             else
@@ -445,53 +458,45 @@ static struct worker_handle *init_worker(struct host *hosts_vec,
             ret = false; // blocking task be executed by a dedicated worker
         }
         // Adds task to worker
-        ft_vector_push((t_vector **)&worker.tasks_vec, &task);
-    } while (ret == true && ft_vector_size(worker.tasks_vec) < MAX_TASK_WORKER);
-    if (ft_vector_resize((t_vector **)&worker.tasks_vec,
-                         ft_vector_size(worker.tasks_vec))) {
-        cancel_worker(&worker, opts);
+        ft_vector_push((t_vector **)&worker->tasks_vec, &task);
+    } while (ret == true &&
+             ft_vector_size(worker->tasks_vec) < MAX_TASK_WORKER);
+    if (ft_vector_resize((t_vector **)&worker->tasks_vec,
+                         ft_vector_size(worker->tasks_vec))) {
+        cancel_worker(worker, opts);
         return (NULL);
     }
-    ft_vector_push((t_vector **)&workers_vec, &worker);
-    worker_addr = &workers_vec[ft_vector_size(workers_vec) - 1];
-    if (pthread_create(&worker_addr->tid, NULL, worker_routine, worker_addr)) {
-        cancel_worker(worker_addr, opts);
-        ft_vector_erase((t_vector **)&workers_vec,
-                        ft_vector_size(workers_vec) - 1);
+    worker->state = WORKER_RUNNING;
+    if (pthread_create(&worker->tid, NULL, worker_routine, worker)) {
+        cancel_worker(worker, opts);
         return (NULL);
     }
     if (opts->verbose > 2) {
         printf("%s", TERM_CL_MAGENTA);
-        printf("Starting worker...\n");
-        print_worker(worker_addr);
+        printf("Starting worker with address %p...\n", worker);
+        print_worker(worker);
         printf("%s", TERM_CL_RESET);
     }
-    return (worker_addr);
+    return (worker);
 }
 
 static int main_loop(struct host *vec_hosts, t_options *opts) {
     unsigned int nbr_workers;
-    struct worker_handle *workers_vec =
-        ft_vector_create(sizeof(struct worker_handle), MAX_WORKER);
+    struct worker_handle workers_pool[MAX_WORKER] = {0};
 
-    if (workers_vec == NULL)
-        error(-1, errno, "allocating workers vector");
-    // Disable vector shrinking to prevent any reallocation
-    ft_vector_set_shrink(workers_vec, false);
     while (1) {
-        user_input(vec_hosts, workers_vec, opts);
+        user_input(vec_hosts, workers_pool, opts);
         usleep(1000); // 1ms sleep
-        loop_worker_state(workers_vec, opts);
+        loop_worker_state(workers_pool, &nbr_workers, opts);
         // If all state done, break_loop
         if (check_hosts_done(vec_hosts) == true)
             break;
         // Find available host
-        nbr_workers = ft_vector_size(workers_vec);
         if (nbr_workers >= MAX_WORKER)
             continue;
-        init_worker(vec_hosts, workers_vec, opts);
+        if (init_worker(vec_hosts, workers_pool, opts))
+            nbr_workers++;
     }
-    ft_vector_free((t_vector **)&workers_vec);
     return (0);
 }
 

@@ -12,7 +12,7 @@ else
 endif
 
 ifeq ($(VALGRIND),)
-	CFLAGS += -fsanitize=address
+	CFLAGS += -fsanitize=address 
 endif
 
 ifneq ($(OPTI),)

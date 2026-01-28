@@ -9,7 +9,8 @@ void print_task(struct task_handle *task);
 void print_host(struct host *);
 void print_scan_state(struct scan_result *scan);
 
-void user_input(struct host *vec_hosts, struct worker_handle *vec_workers,
+void user_input(struct host *vec_hosts,
+                struct worker_handle workers_pool[MAX_WORKER],
                 t_options *opts) {
     char buff[128];
     ssize_t ret;
@@ -26,7 +27,10 @@ void user_input(struct host *vec_hosts, struct worker_handle *vec_workers,
         if (strncmp("h", buff, 1) == 0) {
             ft_vector_iter(vec_hosts, (void (*)(void *))print_host);
         } else if (strncmp("w", buff, 1) == 0) {
-            ft_vector_iter(vec_workers, (void (*)(void *))print_worker);
+            for (unsigned int i = 0; i < MAX_WORKER; i++) {
+                if (workers_pool[i].state != WORKER_AVAILABLE)
+                    print_worker(&workers_pool[i]);
+            }
         }
     }
 }

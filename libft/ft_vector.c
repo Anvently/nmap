@@ -76,6 +76,7 @@ t_vector *ft_vector_create(size_t type_size, size_t initial_capacity) {
     vector->header.capacity = initial_capacity;
     vector->header.type_size = type_size;
     vector->header.len = 0;
+    vector->header.dont_shrink = false;
     return (&vector->data);
 }
 
