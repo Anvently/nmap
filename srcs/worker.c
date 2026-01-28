@@ -43,10 +43,9 @@ void *worker_routine(void *data) {
     struct worker_handle *worker = (struct worker_handle *)data;
     unsigned int running;
 
-    printf("starting thread\n");
-    print_worker(worker);
     pthread_cleanup_push(cleanup, worker);
 
+    printf("pouet %lu\n", pthread_self());
     init_tasks(worker);
     running = count_runnning_tasks(worker);
     while (running > 0) {
@@ -54,6 +53,7 @@ void *worker_routine(void *data) {
     }
 
     pthread_cleanup_pop(1);
+    printf("done %lu\n", pthread_self());
     pthread_exit(worker);
     return (NULL);
 }

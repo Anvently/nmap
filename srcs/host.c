@@ -266,7 +266,7 @@ struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
         }
         args++;
     }
-    ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
+    // ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
     ft_vector_free((t_vector **)&vec_ports);
     return (vec_hosts);
 }

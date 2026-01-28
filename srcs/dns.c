@@ -59,7 +59,6 @@ static int fill_addr_info(const char *hostname, struct sockaddr_in *rslt,
     ret = getaddrinfo(hostname, NULL, &hints, &res);
     if (ret != 0) {
         dns_error(error_ptr, "getaddrinfo", gai_strerror(ret));
-        printf("failed\n");
         return (1);
     }
     *rslt = *(struct sockaddr_in *)res->ai_addr;

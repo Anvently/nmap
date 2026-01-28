@@ -124,7 +124,7 @@ void print_scan_state(struct scan_result *scan) {
 
 void print_host(struct host *host) {
     if (host->state == STATE_DOUBLOON) {
-        printf("Host %s is a duplicated of another host :\n---\n",
+        printf("Host %s is a duplicated of another host\n---\n",
                host->hostname);
         return;
     }

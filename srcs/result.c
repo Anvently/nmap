@@ -56,6 +56,14 @@ void print_scan_result(struct scan_result *result, struct host *host,
                 printf(" (%s)", host->hostname_rsvl);
         }
         break;
+    case SCAN_PING:
+        printf(
+            "PING: %s, %hu/%hu port, reason: %s (ttl = %hhu)",
+            (host->state > STATE_UP ? "UP" : host_state_strings[host->state]),
+            (result->nbr_port - result->remaining), result->nbr_port,
+            reason_strings[result->ports->reason.type],
+            result->ports->reason.ttl);
+        break;
     default:
         printf("%s: %hu ports", scan_type_strings[result->type],
                result->nbr_port);
@@ -67,7 +75,7 @@ void print_scan_result(struct scan_result *result, struct host *host,
 void print_host_result(struct host *host, t_options *opts) {
     (void)opts;
     if (host->state == STATE_DOUBLOON) {
-        printf("---\nHOST RESULT for : DUPLICATED%s\n---\n", host->hostname);
+        printf("---\nHOST RESULT for %s : DUPLICATED\n---\n", host->hostname);
         return;
     }
     printf("---\nHOST RESULT for %s (%s / %s) : %s\n", host->hostname,
@@ -84,7 +92,7 @@ void print_host_result(struct host *host, t_options *opts) {
         printf("---\n");
         return;
     }
-    for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
+    for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
         if (host->scans[i].state > SCAN_DISABLE)
             print_scan_result(&host->scans[i], host, opts);
     }
