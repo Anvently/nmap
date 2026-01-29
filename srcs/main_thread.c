@@ -27,6 +27,8 @@ int ping_packet_rcv(struct task_handle *data);
 int ping_packet_timeout(struct task_handle *data);
 int ping_release(struct task_handle *data);
 
+struct host *check_double_host(struct host *vec_hosts, struct host *host);
+
 /// @brief
 /// @param vec_hosts
 /// @param skip_blocking If enable, blocking scan will not be considered as
@@ -305,7 +307,8 @@ static void handle_task_cancelled(struct task_handle task) {
     }
 }
 
-static void handle_task_done(struct task_handle task, t_options *opts) {
+static void handle_task_done(struct task_handle task, struct host *vec_hosts,
+                             t_options *opts) {
     struct scan_result *scan;
     bool ret;
 
@@ -320,6 +323,9 @@ static void handle_task_done(struct task_handle task, t_options *opts) {
             task.host->state = STATE_RESOLVED;
             task.host->addr = task.data.dns.addr;
             task.host->hostname_rsvl = task.data.dns.hostname_rslv;
+            if (check_double_host(vec_hosts, task.host)) { //
+                task.host->state = STATE_DOUBLOON;
+            }
         }
         scan->state = SCAN_DONE;
         break;
@@ -355,13 +361,13 @@ static void handle_task_done(struct task_handle task, t_options *opts) {
 }
 
 static void handle_worker_result(struct worker_handle *worker, void *ret,
-                                 t_options *opts) {
+                                 struct host *vec_hosts, t_options *opts) {
     (void)ret;
 
     unsigned int i = ft_vector_size(worker->tasks_vec);
     while (i--) {
         if (worker->tasks_vec[i].flags.cancelled == 0) {
-            handle_task_done(worker->tasks_vec[i], opts);
+            handle_task_done(worker->tasks_vec[i], vec_hosts, opts);
         } else {
             handle_task_cancelled(worker->tasks_vec[i]);
         }
@@ -373,7 +379,8 @@ static void handle_worker_result(struct worker_handle *worker, void *ret,
 /// @param workers_vec
 /// @param opts
 static void loop_worker_state(struct worker_handle *workers_pool,
-                              unsigned int *nbr_workers, t_options *opts) {
+                              unsigned int *nbr_workers, struct host *vec_hosts,
+                              t_options *opts) {
     void *ret;
     for (unsigned int i = 0; i < MAX_WORKER && *nbr_workers > 0; i++) {
         if (workers_pool[i].state != WORKER_DONE)
@@ -386,7 +393,7 @@ static void loop_worker_state(struct worker_handle *workers_pool,
             print_worker(&workers_pool[i]);
             printf("%s", TERM_CL_RESET);
         }
-        handle_worker_result(&workers_pool[i], ret, opts);
+        handle_worker_result(&workers_pool[i], ret, vec_hosts, opts);
         ft_vector_free((t_vector **)&workers_pool[i].tasks_vec);
         workers_pool[i].state = WORKER_AVAILABLE;
         workers_pool[i].tid = 0;
@@ -487,7 +494,7 @@ static int main_loop(struct host *vec_hosts, t_options *opts) {
     while (1) {
         user_input(vec_hosts, workers_pool, opts);
         usleep(1000); // 1ms sleep
-        loop_worker_state(workers_pool, &nbr_workers, opts);
+        loop_worker_state(workers_pool, &nbr_workers, vec_hosts, opts);
         // If all state done, break_loop
         if (check_hosts_done(vec_hosts) == true)
             break;

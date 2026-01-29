@@ -1,11 +1,17 @@
 
 #include <errno.h>
 #include <error.h>
+#include <fcntl.h>
 #include <memory.h>
 #include <nmap.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 void print_host(struct host *host);
+
+struct host *check_double_host(struct host *vec_hosts, struct host *host);
 
 /// @brief Should not have to be called in case of errors.
 /// @param hosts
@@ -63,8 +69,7 @@ static struct port_info *allocate_ports(uint16_t *vec_ports,
 /// @param hosts
 /// @param host
 /// @return ```duplicated host``` if host has a doubloon.
-static struct host *check_double_host(struct host *vec_hosts,
-                                      struct host *host) {
+struct host *check_double_host(struct host *vec_hosts, struct host *host) {
     const unsigned int nbr_host = ft_vector_size(vec_hosts);
     for (unsigned int i = 0; i < nbr_host; i++) {
         if (&vec_hosts[i] == host || vec_hosts[i].state == STATE_DOUBLOON)
@@ -249,7 +254,39 @@ static uint16_t *parse_ports(const char *ports) {
     return (vec_ports);
 }
 
-/// Parse host and portst argument and allocate pre-filled host structure
+static void add_hosts_from_file(struct host **vec_hosts, uint16_t *vec_ports,
+                                t_options *opts) {
+    struct stat file_stats;
+    char *mapped;
+    size_t i = 0, start;
+    size_t size;
+    int fd;
+    fd = open(opts->file, O_RDONLY, 0);
+    if (fd < 0)
+        error(1, errno, "opening input file %s", opts->file);
+    if (fstat(fd, &file_stats) < 0)
+        error(1, errno, "fstat() on file %s", opts->file);
+    size = file_stats.st_size;
+    mapped = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (mapped == MAP_FAILED)
+        error(1, errno, "mapping file %s", opts->file);
+    while (i < size && mapped[i]) {
+        while (i < size && ft_isspace(mapped[i]))
+            i++;
+        start = i;
+        while (i < size && ft_isspace(mapped[i]) == false)
+            i++;
+        if (i - start > 0) {
+            mapped[i++] = '\0';
+            add_host(vec_hosts, mapped + start, vec_ports, opts);
+        }
+    }
+    if (errno != 0)
+        error(1, errno, "reading input file %s", opts->file);
+    close(fd);
+}
+
+/// Parse host and ports argument and allocate pre-filled host structure
 /// Exit on errrors.
 struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
     int ret = 0;
@@ -266,6 +303,7 @@ struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
         }
         args++;
     }
+    add_hosts_from_file(&vec_hosts, vec_ports, opts);
     // ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
     ft_vector_free((t_vector **)&vec_ports);
     return (vec_hosts);

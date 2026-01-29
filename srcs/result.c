@@ -40,7 +40,8 @@ void print_scan_result(struct scan_result *result, struct host *host,
     (void)opts;
     switch (result->type) {
     case SCAN_DNS:
-        if (host->state <= STATE_RESOLVE_FAILED) {
+        if (host->state <= STATE_RESOLVE_FAILED &&
+            host->state != STATE_DOUBLOON) {
             printf("DNS: failed");
             if (result->error) {
                 printf(", ");
