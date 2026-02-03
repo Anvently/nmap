@@ -142,3 +142,14 @@ Still the limit of max 1024 sockets (or 512 when locking ephemeral ports).
 For UDP scan method :
 - we can use either UDP unprivileged socket with IP_RECVERR option
 - we can use use bounded+connected RAW socket with UDP and ICMP protocol 
+
+# Questions
+
+## Can a RAW-TCP socket (binded + connected + IP_RECVERR) interact with multiple port at once ?
+
+Yes.
+So a 
+
+## Can a UDP socket (binded + connected + IP_RECVERR) interact with multiple port at once ?
+
+Not sure.

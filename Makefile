@@ -6,7 +6,7 @@ OBJS_FOLDER	=	.objs/
 
 SRCS_FILES	=	main.c  parse_args.c main_thread.c \
 				debug.c host.c result.c dns.c ping.c worker.c \
-				input.c
+				input.c socket.c
 
 OBJS		=	$(addprefix $(OBJS_FOLDER),$(SRCS_FILES:.c=.o))
 SRCS		=	$(addprefix $(SRCS_FOLDER),$(SRCS_FILES))

@@ -172,6 +172,7 @@ static bool assign_task(struct host *host, struct task_handle *task,
     // Only relevant to print debug message when task is started
     bool scan_started = false;
 
+    task->opts = opts;
     switch (host->state) {
     case STATE_PENDING_RESOLVE:
         task->scan_type = SCAN_DNS;
@@ -281,7 +282,7 @@ static bool check_hosts_done(struct host *vec_hosts) {
 
 */
 
-static void handle_task_cancelled(struct task_handle task) {
+static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     struct scan_result *scan;
 
     scan = &task.host->scans[task.scan_type];
@@ -294,17 +295,25 @@ static void handle_task_cancelled(struct task_handle task) {
         break;
     case SCAN_PING:
         --scan->assigned_worker;
+        task.host->current_scan.ping = 0;
+        if (++scan->ports[0].retries >= MAX_RETRIES) {
+            scan->state = SCAN_DONE;
+            scan->ports->reason.type = REASON_ERROR;
+            task.host->state = STATE_ERROR;
+            break;
+        }
         scan->state = SCAN_PENDING;
         task.host->state = STATE_PING_PENDING;
-        task.host->current_scan.ping = 0;
         break;
     default:
         break;
     }
-    if (*task.error) {
+    if (task.host->state != STATE_ERROR && *task.error) {
         free(*task.error);
         *task.error = NULL;
     }
+    if (task.host->state == STATE_ERROR)
+        print_host_result(task.host, opts);
 }
 
 static void handle_task_done(struct task_handle task, struct host *vec_hosts,
@@ -341,6 +350,10 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
             task.host->state = STATE_DOWN;
             break;
 
+        case REASON_ERROR:
+            task.host->state = STATE_ERROR;
+            break;
+
         default:
             task.host->state = STATE_UP;
         }
@@ -369,7 +382,7 @@ static void handle_worker_result(struct worker_handle *worker, void *ret,
         if (worker->tasks_vec[i].flags.cancelled == 0) {
             handle_task_done(worker->tasks_vec[i], vec_hosts, opts);
         } else {
-            handle_task_cancelled(worker->tasks_vec[i]);
+            handle_task_cancelled(worker->tasks_vec[i], opts);
         }
     }
 }
@@ -414,7 +427,7 @@ static void cancel_worker(struct worker_handle *worker, t_options *opts) {
         printf("%s", TERM_CL_RESET);
     }
     while (i--) {
-        handle_task_cancelled(worker->tasks_vec[i]);
+        handle_task_cancelled(worker->tasks_vec[i], opts);
     }
     ft_vector_free((t_vector **)&worker->tasks_vec);
     worker->tid = 0;

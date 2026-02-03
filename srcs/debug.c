@@ -15,6 +15,7 @@ struct pseudo_iphdr {
 
 const char *host_state_strings[] = {
     [STATE_DOUBLOON] = "DOUBLOON",
+    [STATE_ERROR] = "ERROR",
     [STATE_PENDING_RESOLVE] = "PENDING_RESOLVE",
     [STATE_DOWN] = "DOWN",
     [STATE_RESOLVING] = "RESOLVING",
@@ -40,16 +41,15 @@ const char *scan_type_strings[] = {
     [SCAN_XMAS] = "XMAS",      [SCAN_CONNECT] = "CONN", [SCAN_UDP] = "UDP",
     [SCAN_RAW_UDP] = "UDP_RAW"};
 
-const char *reason_strings[] = {
-    [REASON_UNKNOWN] = "unknown",
-    [REASON_ICMP_REPLY] = "icmp reply",
-    [REASON_SYN_ACK] = "syn_ack",
-    [REASON_RST] = "reset",
-    [REASON_PORT_UNREACH] = "port unreachable",
-    [REASON_CONN_REFUSED] = "connection refused",
-    [REASON_USER_INPUT] = "user input",
-    [REASON_NO_RESPONSE] = "no response",
-};
+const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
+                                [REASON_ICMP_REPLY] = "icmp reply",
+                                [REASON_SYN_ACK] = "syn_ack",
+                                [REASON_RST] = "reset",
+                                [REASON_PORT_UNREACH] = "port unreachable",
+                                [REASON_CONN_REFUSED] = "connection refused",
+                                [REASON_USER_INPUT] = "user input",
+                                [REASON_NO_RESPONSE] = "no response",
+                                [REASON_ERROR] = "error"};
 
 void print_worker(struct worker_handle *worker);
 void print_task(struct task_handle *task);
@@ -60,15 +60,19 @@ void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size);
 void print_verbose_tcp(struct tcphdr *tcphdr);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
-void print_nmap_error(struct nmap_error *error, enum nmap_error_type type);
+void print_nmap_error(struct nmap_error *error);
 static void print_dns_error(struct nmap_error *error);
+static void print_sys_error(struct nmap_error *error);
 
-void print_nmap_error(struct nmap_error *error, enum nmap_error_type type) {
-    switch (type) {
-    case ERROR_DNS:
+void print_nmap_error(struct nmap_error *error) {
+    switch (error->type) {
+    case NMAP_ERROR_DNS:
         print_dns_error(error);
         break;
-    case ERROR_PING:
+    case NMAP_ERROR_SYS:
+        print_sys_error(error);
+        break;
+    case NMAP_ERROR_PING:
         break;
     default:
         break;
@@ -95,15 +99,15 @@ void print_task(struct task_handle *task) {
            task->flags.error ? "Er" : "", task->flags.cancelled ? "Ca" : "");
     switch (task->scan_type) {
     case SCAN_DNS:
-        if (*task->error) {
-            print_dns_error(*task->error);
-        }
+
         break;
     case SCAN_PING:
-
         break;
     default:
         break;
+    }
+    if (*task->error) {
+        print_nmap_error(*task->error);
     }
     printf("\n");
 }
@@ -235,6 +239,11 @@ void print_verbose_packet(const char *buffer, size_t len) {
 
 static void print_dns_error(struct nmap_error *error) {
     printf("%s: %s", error->u.dns.func_fail, error->u.dns.description);
+    if (error->error != 0)
+        printf(" => %s (%d)", strerror(error->error), error->error);
+}
+static void print_sys_error(struct nmap_error *error) {
+    printf("%s: %s", error->u.sys.func_fail, error->u.sys.description);
     if (error->error != 0)
         printf(" => %s (%d)", strerror(error->error), error->error);
 }

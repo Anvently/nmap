@@ -8,7 +8,7 @@ static void cleanup(void *arg) {
     size_t i = ft_vector_size(worker->tasks_vec);
     while (i--) {
         task = &worker->tasks_vec[i];
-        if (task->flags.initialized == 1 && task->release)
+        if (task->release)
             task->release(task);
         task->flags.done = 1;
     }

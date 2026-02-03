@@ -25,6 +25,7 @@ static void dns_error(struct nmap_error **error_ptr, const char *func_fail,
     *error_ptr = error = calloc(1, sizeof(struct nmap_error));
     if (error == NULL)
         return;
+    error->type = NMAP_ERROR_DNS;
     strlcpy(error->u.dns.func_fail, func_fail, sizeof(error->u.dns.func_fail));
     strlcpy(error->u.dns.description, detail, sizeof(error->u.dns.description));
     error->error = errno;

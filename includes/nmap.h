@@ -15,6 +15,7 @@
 // multiple port of a same host)
 #define MAX_TASK_WORKER 16
 #define MAX_PORT_NBR 1024U // Maximum different port nmap is allowed to scan
+#define MAX_RETRIES 5
 
 enum OPTIONS {
     OPT_VERBOSE = 0,    //-v Verbose output. Do not suppress DUP replies when
@@ -156,6 +157,7 @@ enum result_reason {
     REASON_CONN_REFUSED,
     REASON_USER_INPUT,
     REASON_NO_RESPONSE,
+    REASON_ERROR
 } __attribute__((__packed__));
 
 struct port_info {
@@ -166,6 +168,7 @@ struct port_info {
         enum result_reason type;
     } reason;
     struct nmap_error *error; // Error related to a single port
+    uint8_t retries;          // Number of time the task is retried
 } __attribute__((__packed__));
 
 struct scan_result {
@@ -251,7 +254,7 @@ struct task_handle {
     struct timeval timeout;
     struct host *host; // Host associated to the task
 
-    // MAIN_THREAD : Called at beginning of thread
+    // WORKER : Called at beginning of task
     int (*init)(struct task_handle *data);
     // WORKER : Called when send_state is toggled
     int (*packet_send)(struct task_handle *data);
@@ -274,6 +277,7 @@ struct task_handle {
                                // will be later reassigned
     } flags;
     struct nmap_error **error; // Ptr where errors must be registered
+    t_options *opts;
 };
 
 struct worker_handle {             // 1 worker = 1 thread = 1 polling
@@ -286,16 +290,28 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
     pthread_t tid;
 };
 
-enum nmap_error_type { ERROR_DNS, ERROR_PING, ERROR_SCAN };
+enum nmap_error_type {
+    NMAP_ERROR_DNS,
+    NMAP_ERROR_SYS,
+    NMAP_ERROR_PING,
+    NMAP_ERROR_SCAN
+};
 
 struct nmap_error {
     int error; // errno number
-    union {    // Examples
+    enum nmap_error_type type;
+    union { // Examples
         struct {
             char func_fail[16];
             char description[64];
         } dns;
         struct {
+            char func_fail[16];
+            char description[64];
+        } sys;
+        struct {
+            char func_fail[16];
+            char description[64];
             struct icmphdr icmphdr;
             uint8_t detail[8];
         } ping;
