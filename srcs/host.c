@@ -267,6 +267,10 @@ static void add_hosts_from_file(struct host **vec_hosts, uint16_t *vec_ports,
     if (fstat(fd, &file_stats) < 0)
         error(1, errno, "fstat() on file %s", opts->file);
     size = file_stats.st_size;
+    if (size == 0) {
+        close(fd);
+        return;
+    }
     mapped = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (mapped == MAP_FAILED)
         error(1, errno, "mapping file %s", opts->file);
@@ -303,8 +307,9 @@ struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
         }
         args++;
     }
-    add_hosts_from_file(&vec_hosts, vec_ports, opts);
-    // ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
+    if (opts->file)
+        add_hosts_from_file(&vec_hosts, vec_ports, opts);
+    ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
     ft_vector_free((t_vector **)&vec_ports);
     return (vec_hosts);
 }
