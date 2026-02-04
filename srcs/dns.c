@@ -70,13 +70,11 @@ static int fill_addr_info(const char *hostname, struct sockaddr_in *rslt,
 int dns_init(struct task_handle *data) {
     if (fill_addr_info(data->data.dns.hostname, &data->data.dns.addr,
                        data->error)) {
-        data->flags.done = 1;
         data->flags.error = 1;
         return (1);
     }
     if (data->data.dns.dont_resolve == false)
         get_ip_name(&data->data.dns.addr, &data->data.dns.hostname_rslv,
                     data->error);
-    data->flags.done = 1;
-    return (0);
+    return (1);
 }

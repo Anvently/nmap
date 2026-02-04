@@ -74,6 +74,9 @@ void print_nmap_error(struct nmap_error *error) {
         break;
     case NMAP_ERROR_PING:
         break;
+    case NMAP_ERROR_WORKER:
+        print_sys_error(error);
+        break;
     default:
         break;
     }

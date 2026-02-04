@@ -23,7 +23,7 @@ void user_input(struct host *vec_hosts,
 int dns_init(struct task_handle *data);
 int ping_init(struct task_handle *data);
 int ping_packet_send(struct task_handle *data);
-int ping_packet_rcv(struct task_handle *data);
+int ping_packet_rcv(struct task_handle *data, struct sock_instance *sock);
 int ping_packet_timeout(struct task_handle *data);
 int ping_release(struct task_handle *data);
 
@@ -163,14 +163,16 @@ static void confirm_task(struct task_handle *task) {
 /// ```host``` status
 /// @param host
 /// @param task
-/// @param skip_blocking blocking task  (```SCAN_DNS``` and ```SCAN_CONNECT```)
-/// will be rejected
+/// @param nbr_socket used to increment the number of sockets the worker has to
+/// manage. Blocking task  (```SCAN_DNS``` and ```SCAN_CONNECT```) will be
+/// rejeced if nbr_socket > 0
 /// @return ```false``` if no available task
 static bool assign_task(struct host *host, struct task_handle *task,
-                        bool skip_blocking, t_options *opts) {
+                        unsigned int *nbr_socket, t_options *opts) {
     bool ret = false;
     // Only relevant to print debug message when task is started
     bool scan_started = false;
+    bool skip_blocking = *nbr_socket > 0;
 
     task->opts = opts;
     switch (host->state) {
@@ -204,12 +206,14 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->data.ping.rslt = &host->scans[SCAN_PING].ports[0];
         task->error = &host->scans[SCAN_PING].error;
         task->data.ping.saddr = (struct sockaddr_in){0};
-        task->data.ping.sock_eph = -1;
-        task->data.ping.sock_icmp = -1;
-        task->data.ping.sock_tcp = -1;
+        nbr_socket += 1; // Only TCP sock for now
+        task->sock_eph.fd = -1;
+        task->sock_icmp = (struct sock_instance){.fd = -1};
+        task->sock_main = (struct sock_instance){.fd = -1};
         task->host = host;
         ret = true;
-        scan_started = true;
+        if (task->data.ping.rslt->retries == 0)
+            scan_started = true;
         break;
 
     default: // For now DNS and PING only
@@ -321,17 +325,19 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     struct scan_result *scan;
     bool ret;
 
+    if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose > 1)
+        print_task_result(&task);
     scan = &task.host->scans[task.scan_type];
     switch (scan->type) {
     case SCAN_DNS:
         scan->assigned_worker--;
         task.host->current_scan.dns = 0;
+        task.host->hostname_rsvl = task.data.dns.hostname_rslv;
+        task.host->addr = task.data.dns.addr;
         if (task.flags.error) {
             task.host->state = STATE_RESOLVE_FAILED;
         } else {
             task.host->state = STATE_RESOLVED;
-            task.host->addr = task.data.dns.addr;
-            task.host->hostname_rsvl = task.data.dns.hostname_rslv;
             if (check_double_host(vec_hosts, task.host)) { //
                 task.host->state = STATE_DOUBLOON;
             }
@@ -341,30 +347,42 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_PING:
         scan->assigned_worker--;
         task.host->current_scan.ping = 0;
+        if (*task.error && (*task.error)->type == NMAP_ERROR_WORKER) {
+            scan->ports[0].reason.type = REASON_ERROR;
+        }
         switch (scan->ports[0].reason.type) {
         case REASON_NO_RESPONSE:
-            task.host->state = STATE_PING_TIMEOUT;
+            if (++scan->ports[0].retries >= MAX_RETRIES) {
+                scan->state = SCAN_DONE;
+                scan->ports->reason.type = REASON_NO_RESPONSE;
+                task.host->state = STATE_PING_TIMEOUT;
+                scan->state = SCAN_DONE;
+                break;
+            }
+            task.host->state = STATE_PING_PENDING;
+            scan->state = SCAN_PENDING;
             break;
 
         case REASON_HOST_UNREACH:
             task.host->state = STATE_DOWN;
+            scan->state = SCAN_DONE;
             break;
 
         case REASON_ERROR:
             task.host->state = STATE_ERROR;
+            scan->state = SCAN_DONE;
             break;
 
         default:
             task.host->state = STATE_UP;
+            scan->state = SCAN_DONE;
+            break;
         }
-        scan->state = SCAN_DONE;
         break;
     default:
         break;
     }
     ret = switch_state(task.host);
-    if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose > 1)
-        print_task_result(&task);
     if (scan->state == SCAN_DONE && opts->verbose > 0) {
         printf("Scan done, host %s\n", task.host->hostname);
         print_scan_result(scan, task.host, opts);
@@ -431,6 +449,7 @@ static void cancel_worker(struct worker_handle *worker, t_options *opts) {
     }
     ft_vector_free((t_vector **)&worker->tasks_vec);
     worker->tid = 0;
+    worker->nbr_sock = 0;
     worker->state = WORKER_AVAILABLE;
 }
 
@@ -464,8 +483,7 @@ init_worker(struct host *hosts_vec,
         ft_vector_create(sizeof(struct task_handle), MAX_TASK_WORKER);
     do {
         task = (struct task_handle){0};
-        ret = assign_task(host, &task, ft_vector_size(worker->tasks_vec) > 0,
-                          opts);
+        ret = assign_task(host, &task, &worker->nbr_sock, opts);
         if (ret == false) { // This host has no more task
             host = find_available_host(hosts_vec, true);
             if (host)

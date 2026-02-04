@@ -1,6 +1,7 @@
 #include <libft.h>
 #include <netinet/ip.h>
 #include <nmap.h>
+#include <time.h>
 
 const char *executable_name = "ft_nmap";
 
@@ -41,6 +42,7 @@ static t_options dft_options = {.size = 0,
 int main(int argc, char **argv) {
     t_options options = dft_options;
     unsigned int nbr_args = 0;
+    srand(time(NULL));
     if (ft_options_retrieve(argc - 1, argv + 1, &options, &nbr_args))
         return (2);
     if (options.help) {

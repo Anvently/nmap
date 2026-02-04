@@ -10,22 +10,21 @@ SRCS_FILES	=	main.c  parse_args.c main_thread.c \
 
 OBJS		=	$(addprefix $(OBJS_FOLDER),$(SRCS_FILES:.c=.o))
 SRCS		=	$(addprefix $(SRCS_FOLDER),$(SRCS_FILES))
-DEPS		=	$(addprefix $(OBJS_FOLDER), $(SRCS_FILES:.cpp=.d))
+DEPS		=	$(addprefix $(OBJS_FOLDER), $(SRCS_FILES:.c=.d))
 
 LIBFT		=	libft/libft.a
 
 CC			=	gcc
-CFLAGS		=	-fsanitize=address -Wall -Wextra -Werror -g3 -MMD -I$(INCLUDES)
+CFLAGS		=	-fsanitize=address -Wall -Wextra -Werror -g3 -I$(INCLUDES)
 
 .PHONY		=	all clean fclean re bonus
 
--include	$(wildcard *.d)
-
 all: $(NAME)
 
-$(NAME): $(LIBFT) $(OBJS)
+$(NAME): $(LIBFT) $(OBJS) Makefile
 	@echo "\n-----COMPILING $(NAME)-------\n"
 	$(CC) $(CFLAGS) $(OBJS) -o $(NAME) -Llibft/ -lft -lm
+	sudo setcap cap_net_raw+ep ./ft_nmap
 	@echo "Executable has been successfully created."
 
 

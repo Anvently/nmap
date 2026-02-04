@@ -30,7 +30,11 @@ void print_task_result(struct task_handle *task) {
         }
         break;
     case SCAN_PING:
-        printf("PING result for host %s: ", task->host->hostname);
+        printf("PING result for host %s:", task->host->hostname);
+        if (task->data.ping.rslt->retries > 0)
+            printf(" retry %hhu", task->data.ping.rslt->retries);
+        printf(" %s (%hhu)", reason_strings[task->data.ping.rslt->reason.type],
+               task->data.ping.rslt->reason.ttl);
         if (*task->error) {
             printf(", ");
             print_nmap_error(*task->error);
@@ -67,15 +71,15 @@ void print_scan_result(struct scan_result *result, struct host *host,
         break;
     case SCAN_PING:
         printf(
-            "PING: %s, %hu/%hu port, reason: %s (ttl = %hhu)",
+            "PING: %s, %hu/%hu port, reason: %s",
             (host->state > STATE_UP ? "UP" : host_state_strings[host->state]),
             (result->nbr_port - result->remaining), result->nbr_port,
-            reason_strings[result->ports->reason.type],
-            result->ports->reason.ttl);
+            reason_strings[result->ports->reason.type]);
         if (result->error) {
             printf(", ");
             print_nmap_error(result->error);
-        }
+        } else
+            printf(" (ttl = %hhu)", result->ports->reason.ttl);
         break;
     default:
         printf("%s: %hu ports", scan_type_strings[result->type],

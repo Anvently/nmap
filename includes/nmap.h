@@ -9,13 +9,17 @@
 #ifndef NMAP_H
 #define NMAP_H
 
-#define PING_TIMEOUT 5
+#define PING_TIMEOUT 3 // Default ping timeout
 #define MAX_WORKER 250 // Maximum number of threads
 // Maximum number of task a worker can take (only UDP scan is able to scan
 // multiple port of a same host)
 #define MAX_TASK_WORKER 16
 #define MAX_PORT_NBR 1024U // Maximum different port nmap is allowed to scan
-#define MAX_RETRIES 5
+#define MAX_RETRIES 3
+
+// It's the task responspability (in send handler to override this default
+// timeout)
+#define DFT_TASK_TIMEOUT 3
 
 enum OPTIONS {
     OPT_VERBOSE = 0,    //-v Verbose output. Do not suppress DUP replies when
@@ -210,9 +214,6 @@ struct dns_data {
 };
 
 struct ping_data {
-    int sock_eph;             // mock socket to lock an ephemeral port
-    int sock_tcp;             // tcp raw socket
-    int sock_icmp;            // icmp socket
     struct in_addr daddr;     // peer address
     struct sockaddr_in saddr; // tcp
     struct port_info *rslt;
@@ -220,19 +221,15 @@ struct ping_data {
 
 struct tcp_data {           // Used by SYN, ACK, NULL, XMAS, FIN
     uint8_t flag;           // TCP flag to send ()
-    int sock_eph;           // mock socket to lock an ephemeral port
-    int sock_tcp;           // tcp raw socket
     struct port_info *port; // result
 };
 
 struct connect_data {
-    int sock_stream;      // bind to ephemeral port
     struct in_addr daddr; // peer address
     struct port_info *port;
 };
 
 struct udp_data {
-    int sock_udp;         // binded to ephemeral port + connected to peer
     struct in_addr daddr; // peer address
     struct port_info *port;
 };
@@ -245,6 +242,10 @@ union task_data {
     struct udp_data udp;
 };
 
+struct sock_instance {
+    int fd;
+    struct pollfd *pollfd;
+};
 struct task_handle {
     // Pointer toward rslt data. No race condition if assigned by host
 
@@ -254,24 +255,64 @@ struct task_handle {
     struct timeval timeout;
     struct host *host; // Host associated to the task
 
-    // WORKER : Called at beginning of task
-    int (*init)(struct task_handle *data);
-    // WORKER : Called when send_state is toggled
-    int (*packet_send)(struct task_handle *data);
-    // WORKER : Called when main_rcv or icmp_rcv is toggled
-    int (*packet_rcv)(struct task_handle *data);
-    // WORKER : Called when timeout is toggled
-    int (*packet_timeout)(struct task_handle *data);
-    // WORKER : Called when done or error is toggled
-    int (*release)(struct task_handle *data);
     struct {
-        uint8_t initialized : 1;
-        uint8_t send_state : 1; // 0 => nothing sent, 1 => something sent
-                                // (waiting for related response)
-        uint8_t main_rcv : 1;   // incoming tcp/udp packet
-        uint8_t icmp_rcv : 1;   // incoming icmp (for ping only)
-        uint8_t timeout : 1;    // Timeout has been reached
-        uint8_t done : 1;       // Scan complete
+        int fd;
+    } sock_eph;                     // mock socket to lock an ephemeral port
+    struct sock_instance sock_main; // tcp/udp raw socket
+    struct sock_instance sock_icmp; // icmp socket
+
+    // WORKER : Called at beginning of task
+    // Initialized flag is set by worker if success (0 returned).
+    // Done flag is set by worker if error (non-zero returned), but release IS
+    // NOT CALLED.
+    /// It's the scan responsability to set or not the error flag.
+    // A scan should not send the first data packet in init(), but should rather
+    // use packet_send for this
+    int (*init)(struct task_handle *data);
+
+    // WORKER : Called when send_state is disabled
+    // If non-zero returned, task is released.
+    // Packet send will be called as long as the send_state is disabled.
+    // The scan should set an appropriate timeout and enable send_state.
+    // If non-zero returned, task is released (but no error is set)
+    int (*packet_send)(struct task_handle *data);
+
+    // WORKER : Called when main_rcv or icmp_rcv is toggled
+    ///
+    // If non-zero returned, task is released (but no error is set).
+    // If the scan wants to answer something, it may choose to send its packet
+    // in packet_rcv or set the send_state (with a possibly short timeout) and
+    // wait for the next loop to send the reply.
+    ///
+    // @warning: if a scan use 2 socket, this handler could be called twice in a
+    // single event loop, so if the send_state is changed during the first call,
+    // the second call may see an unexpected send_state
+    ///
+    // Expected flag in sock_instance->pollfd.events are POLLIN, POLLHUP and
+    // POLLERR
+    int (*packet_rcv)(struct task_handle *data, struct sock_instance *sock);
+
+    // WORKER : Called when timeout is toggled
+    // timeout flags is set by worker but can be restaured (timeout must
+    // also be reset). If non-zero returned, task is released. If zero returned,
+    // send_state is resetted (but not timeout flag).
+    /// For retry routine, its better to have the task failed and
+    // to let the main thread handle the max_retry variable
+    int (*packet_timeout)(struct task_handle *data);
+
+    // WORKER : Called when done or cancelled is toggled.
+    // Worker will disable initialized flag and will enable the done flag
+    int (*release)(struct task_handle *data);
+
+    struct {
+        uint8_t initialized : 1; // Data were initialized, when calling release,
+                                 // flag is set to 0
+        uint8_t send_state : 1;  // 0 => nothing sent, 1 => something sent
+                                 // (waiting for related response)
+        uint8_t main_rcv : 1;    // incoming tcp/udp packet
+        uint8_t icmp_rcv : 1;    // incoming icmp (for ping only)
+        uint8_t timeout : 1;     // Timeout has been reached
+        uint8_t done : 1;        // Scan complete
         uint8_t error : 1; // Error, ex: syscall error, task will not reassigned
         uint8_t cancelled : 1; // The task failed to launch as it should, it
                                // will be later reassigned
@@ -286,15 +327,18 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
         WORKER_AVAILABLE = 0,
         WORKER_RUNNING,
         WORKER_DONE
-    } state; // !!! atomic access only !!!
+    } state;               // !!! atomic access only !!!
+    unsigned int nbr_sock; // usefull for polling structure
     pthread_t tid;
 };
 
 enum nmap_error_type {
-    NMAP_ERROR_DNS,
-    NMAP_ERROR_SYS,
-    NMAP_ERROR_PING,
-    NMAP_ERROR_SCAN
+    NMAP_ERROR_DNS,    // Error related to DNS failure, likely
+    NMAP_ERROR_SYS,    // Error related to system call failure, unlikely
+    NMAP_ERROR_PING,   // Error related to ping procedure
+    NMAP_ERROR_SCAN,   // Undefined
+    NMAP_ERROR_WORKER, // Error related to deadlock condition or unexpected
+                       // behaviour, mostly for debugging
 };
 
 struct nmap_error {
