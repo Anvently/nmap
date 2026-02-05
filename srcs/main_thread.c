@@ -145,7 +145,7 @@ static void confirm_task(struct task_handle *task) {
         host->state = STATE_PING_SENT;
         host->current_scan.ping = 1;
         host->scans[SCAN_PING].state = SCAN_RUNNING;
-        task->data.ping.rslt->state = PORT_SCANNING;
+        task->io_data.ping.rslt->state = PORT_SCANNING;
         break;
     default:
         host->state = STATE_SCAN_RUNNING;
@@ -184,10 +184,10 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->release = NULL;
         task->packet_send = NULL;
         task->timeout = (struct timeval){0};
-        task->data.dns.hostname_rslv = NULL;
-        task->data.dns.addr = (struct sockaddr_in){0};
-        task->data.dns.hostname = host->hostname;
-        task->data.dns.dont_resolve = (opts->numeric ? true : false);
+        task->io_data.dns.hostname_rslv = NULL;
+        task->io_data.dns.addr = (struct sockaddr_in){0};
+        task->io_data.dns.hostname = host->hostname;
+        task->io_data.dns.dont_resolve = (opts->numeric ? true : false);
         task->error = &host->scans[SCAN_DNS].error;
         task->host = host;
         ret = true;
@@ -202,17 +202,17 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->packet_timeout = ping_packet_timeout;
         task->release = ping_release;
         task->timeout = (struct timeval){.tv_sec = PING_TIMEOUT, .tv_usec = 0};
-        task->data.ping.daddr = host->addr.sin_addr;
-        task->data.ping.rslt = &host->scans[SCAN_PING].ports[0];
+        task->io_data.ping.daddr = host->addr.sin_addr;
+        task->io_data.ping.rslt = &host->scans[SCAN_PING].ports[0];
         task->error = &host->scans[SCAN_PING].error;
-        task->data.ping.saddr = (struct sockaddr_in){0};
-        nbr_socket += 1; // Only TCP sock for now
+        task->io_data.ping.saddr = (struct sockaddr_in){0};
+        *nbr_socket += 1; // Only TCP sock for now
         task->sock_eph.fd = -1;
         task->sock_icmp = (struct sock_instance){.fd = -1};
         task->sock_main = (struct sock_instance){.fd = -1};
         task->host = host;
         ret = true;
-        if (task->data.ping.rslt->retries == 0)
+        if (task->io_data.ping.rslt->retries == 0)
             scan_started = true;
         break;
 
@@ -332,8 +332,8 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_DNS:
         scan->assigned_worker--;
         task.host->current_scan.dns = 0;
-        task.host->hostname_rsvl = task.data.dns.hostname_rslv;
-        task.host->addr = task.data.dns.addr;
+        task.host->hostname_rsvl = task.io_data.dns.hostname_rslv;
+        task.host->addr = task.io_data.dns.addr;
         if (task.flags.error) {
             task.host->state = STATE_RESOLVE_FAILED;
         } else {

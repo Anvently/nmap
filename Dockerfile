@@ -12,12 +12,11 @@ RUN apt-get update && \
         strace && \
     rm -rf /var/lib/apt/lists/*
 
-# Copie ton code source dans le container
-# (si ton ft_ping est un fichier unique, adapte selon ton projet)
+# Copie SEULEMENT le code source (pas les binaires)
 COPY . /src
-
 WORKDIR /src
 
-RUN make
+# Nettoie puis compile dans le container
+RUN make clean && make
 
 CMD ["/bin/bash"]

@@ -18,8 +18,10 @@ static void task_error(struct nmap_error **error_ptr, enum nmap_error_type type,
     if (error == NULL)
         return;
     error->type = type;
-    strlcpy(error->u.dns.func_fail, func_fail, sizeof(error->u.dns.func_fail));
-    strlcpy(error->u.dns.description, detail, sizeof(error->u.dns.description));
+    ft_strlcpy(error->u.dns.func_fail, func_fail,
+               sizeof(error->u.dns.func_fail));
+    ft_strlcpy(error->u.dns.description, detail,
+               sizeof(error->u.dns.description));
 }
 
 static void release_task(struct task_handle *task) {

@@ -4,12 +4,13 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/time.h>
 
 #ifndef NMAP_H
 #define NMAP_H
 
-#define PING_TIMEOUT 3 // Default ping timeout
+#define PING_TIMEOUT 5 // Default ping timeout
 #define MAX_WORKER 250 // Maximum number of threads
 // Maximum number of task a worker can take (only UDP scan is able to scan
 // multiple port of a same host)
@@ -20,6 +21,10 @@
 // It's the task responspability (in send handler to override this default
 // timeout)
 #define DFT_TASK_TIMEOUT 3
+
+#define TCP_DFT_TOS (IPTOS_DSCP_AF31 | IPTOS_ECN_ECT0)
+#define UDP_DFT_TOS (IPTOS_CLASS_CS0)
+#define ICMP_DFT_TOS (IPTOS_DSCP_AF31)
 
 enum OPTIONS {
     OPT_VERBOSE = 0,    //-v Verbose output. Do not suppress DUP replies when
@@ -251,9 +256,11 @@ struct task_handle {
 
     enum scan_type scan_type;
 
-    union task_data data;
+    union task_data io_data; // Data filled by main_thread
     struct timeval timeout;
     struct host *host; // Host associated to the task
+
+    void *ctx; // worker allocated data
 
     struct {
         int fd;

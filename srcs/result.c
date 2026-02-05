@@ -20,9 +20,10 @@ void print_task_result(struct task_handle *task) {
     case SCAN_DNS:
         printf("DNS resolution for host %s: ", task->host->hostname);
         if (task->flags.cancelled == 0) {
-            printf("%s (%s)", inet_ntoa(task->data.dns.addr.sin_addr),
-                   task->data.dns.hostname_rslv ? task->data.dns.hostname_rslv
-                                                : "");
+            printf("%s (%s)", inet_ntoa(task->io_data.dns.addr.sin_addr),
+                   task->io_data.dns.hostname_rslv
+                       ? task->io_data.dns.hostname_rslv
+                       : "");
         }
         if (*task->error) {
             printf(", ");
@@ -31,10 +32,11 @@ void print_task_result(struct task_handle *task) {
         break;
     case SCAN_PING:
         printf("PING result for host %s:", task->host->hostname);
-        if (task->data.ping.rslt->retries > 0)
-            printf(" retry %hhu", task->data.ping.rslt->retries);
-        printf(" %s (%hhu)", reason_strings[task->data.ping.rslt->reason.type],
-               task->data.ping.rslt->reason.ttl);
+        if (task->io_data.ping.rslt->retries > 0)
+            printf(" retry %hhu", task->io_data.ping.rslt->retries);
+        printf(" %s (%hhu)",
+               reason_strings[task->io_data.ping.rslt->reason.type],
+               task->io_data.ping.rslt->reason.ttl);
         if (*task->error) {
             printf(", ");
             print_nmap_error(*task->error);

@@ -6,7 +6,7 @@ OBJS_FOLDER	=	.objs/
 
 SRCS_FILES	=	main.c  parse_args.c main_thread.c \
 				debug.c host.c result.c dns.c ping.c worker.c \
-				input.c socket.c
+				input.c socket.c protocol.c
 
 OBJS		=	$(addprefix $(OBJS_FOLDER),$(SRCS_FILES:.c=.o))
 SRCS		=	$(addprefix $(SRCS_FOLDER),$(SRCS_FILES))
@@ -15,7 +15,7 @@ DEPS		=	$(addprefix $(OBJS_FOLDER), $(SRCS_FILES:.c=.d))
 LIBFT		=	libft/libft.a
 
 CC			=	gcc
-CFLAGS		=	-fsanitize=address -Wall -Wextra -Werror -g3 -I$(INCLUDES)
+CFLAGS		=	-fsanitize=address -Wall -Wextra -Werror -g3 -I$(INCLUDES) -D_GNU_SOURCE
 
 .PHONY		=	all clean fclean re bonus
 
@@ -24,7 +24,8 @@ all: $(NAME)
 $(NAME): $(LIBFT) $(OBJS) Makefile
 	@echo "\n-----COMPILING $(NAME)-------\n"
 	$(CC) $(CFLAGS) $(OBJS) -o $(NAME) -Llibft/ -lft -lm
-	sudo setcap cap_net_raw+ep ./ft_nmap
+	-setcap cap_net_raw+ep ./ft_nmap	
+	-sudo setcap cap_net_raw+ep ./ft_nmap
 	@echo "Executable has been successfully created."
 
 
@@ -59,7 +60,7 @@ docker-limit:
 
 
 docker:
-	docker build -t debian_c . && docker run --network=host --cap-add=NET_RAW -it debian_c
+	docker build -t debian_c . && docker run --cap-add=NET_RAW -it debian_c
 
 tcpdump:
 	docker run --rm --net container:$$(docker ps -q) --cap-add NET_RAW nicolaka/netshoot tcpdump -x -i eth0 icmp

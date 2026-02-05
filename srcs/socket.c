@@ -68,6 +68,13 @@ int socket_open_tcp(t_options *opts, struct in_addr daddr,
     fd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (fd < 0)
         return (-1);
+    if (interface) {
+        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface,
+                       strlen(interface))) {
+            close(fd);
+            return (-2);
+        }
+    }
     if (bind(fd, (const struct sockaddr *)&addr,
              (socklen_t)sizeof(struct sockaddr_in))) {
         close(fd);
@@ -84,22 +91,10 @@ int socket_open_tcp(t_options *opts, struct in_addr daddr,
         close(fd);
         return (-2);
     }
-    opt = opts->ttl ? opts->ttl : 64;
-    if (setsockopt(fd, IPPROTO_IP, IP_TTL, &opt, sizeof(opt))) {
-        close(fd);
-        return (-2);
-    }
     opt = 1;
     if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &opt, sizeof(opt))) {
         close(fd);
         return (-2);
-    }
-    if (interface) {
-        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface,
-                       strlen(interface))) {
-            close(fd);
-            return (-2);
-        }
     }
     if (saddr) {
         if (getsockname(fd, (struct sockaddr *)&addr, &addr_len)) {

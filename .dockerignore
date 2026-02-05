@@ -1,0 +1,4 @@
+ft_nmap
+*.o
+.objs/
+libft.a

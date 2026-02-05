@@ -26,8 +26,10 @@ static void dns_error(struct nmap_error **error_ptr, const char *func_fail,
     if (error == NULL)
         return;
     error->type = NMAP_ERROR_DNS;
-    strlcpy(error->u.dns.func_fail, func_fail, sizeof(error->u.dns.func_fail));
-    strlcpy(error->u.dns.description, detail, sizeof(error->u.dns.description));
+    ft_strlcpy(error->u.dns.func_fail, func_fail,
+               sizeof(error->u.dns.func_fail));
+    ft_strlcpy(error->u.dns.description, detail,
+               sizeof(error->u.dns.description));
     error->error = errno;
 }
 
@@ -68,13 +70,13 @@ static int fill_addr_info(const char *hostname, struct sockaddr_in *rslt,
 }
 
 int dns_init(struct task_handle *data) {
-    if (fill_addr_info(data->data.dns.hostname, &data->data.dns.addr,
+    if (fill_addr_info(data->io_data.dns.hostname, &data->io_data.dns.addr,
                        data->error)) {
         data->flags.error = 1;
         return (1);
     }
-    if (data->data.dns.dont_resolve == false)
-        get_ip_name(&data->data.dns.addr, &data->data.dns.hostname_rslv,
+    if (data->io_data.dns.dont_resolve == false)
+        get_ip_name(&data->io_data.dns.addr, &data->io_data.dns.hostname_rslv,
                     data->error);
     return (1);
 }

@@ -37,7 +37,8 @@ static t_options dft_options = {.size = 0,
                                     0xFFFF >> (16 - SCAN_NBR),
                                 .ports = "1-1024",
                                 .threads = 16,
-                                .ttl = 64};
+                                .ttl = 64,
+                                .pattern = "0123456789abcdef"};
 
 int main(int argc, char **argv) {
     t_options options = dft_options;

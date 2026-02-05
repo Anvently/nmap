@@ -233,9 +233,9 @@ void print_verbose_packet(const char *buffer, size_t len) {
     if (len < sizeof(struct iphdr))
         return;
     if (((struct iphdr *)buffer)->protocol == IPPROTO_TCP) {
-        print_verbose_tcp((struct tcphdr *)(buffer + sizeof(struct iphdr *)));
+        print_verbose_tcp((struct tcphdr *)(buffer + sizeof(struct iphdr)));
     } else if (((struct iphdr *)buffer)->protocol == IPPROTO_ICMP) {
-        print_verbose_icmp((struct icmphdr *)(buffer + sizeof(struct iphdr *)),
+        print_verbose_icmp((struct icmphdr *)(buffer + sizeof(struct iphdr)),
                            len - sizeof(struct iphdr));
     }
 }
