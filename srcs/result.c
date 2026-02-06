@@ -9,6 +9,9 @@ extern const char *scan_type_strings[11];
 void print_nmap_error(struct nmap_error *error);
 void print_task(struct task_handle *task);
 void print_task_result(struct task_handle *task) {
+    int tid = gettid();
+    if (getpid() != tid)
+        printf("[%d] ", tid);
     printf("%s%s%s: ",
            (task->flags.cancelled
                 ? TERM_CL_RED
@@ -34,9 +37,10 @@ void print_task_result(struct task_handle *task) {
         printf("PING result for host %s:", task->host->hostname);
         if (task->io_data.ping.rslt->retries > 0)
             printf(" retry %hhu", task->io_data.ping.rslt->retries);
-        printf(" %s (%hhu)",
+        printf(" %s (%hhu, %.2f)",
                reason_strings[task->io_data.ping.rslt->reason.type],
-               task->io_data.ping.rslt->reason.ttl);
+               task->io_data.ping.rslt->reason.ttl,
+               task->io_data.ping.rslt->reason.rtt);
         if (*task->error) {
             printf(", ");
             print_nmap_error(*task->error);
@@ -81,7 +85,8 @@ void print_scan_result(struct scan_result *result, struct host *host,
             printf(", ");
             print_nmap_error(result->error);
         } else
-            printf(" (ttl = %hhu)", result->ports->reason.ttl);
+            printf(" (ttl = %hhu, rtt = %.2f ms)", result->ports->reason.ttl,
+                   result->ports->reason.rtt);
         break;
     default:
         printf("%s: %hu ports", scan_type_strings[result->type],
@@ -102,7 +107,8 @@ void print_host_result(struct host *host, t_options *opts) {
            host->hostname_rsvl ? host->hostname_rsvl : "unkown",
            host_state_strings[host->state]);
     print_scan_result(&host->scans[SCAN_DNS], host, opts);
-    print_scan_result(&host->scans[SCAN_PING], host, opts);
+    if (host->state > STATE_RESOLVE_FAILED)
+        print_scan_result(&host->scans[SCAN_PING], host, opts);
     if (host->state < STATE_SCAN_PENDING) {
         printf("---\n");
         return;

@@ -4,6 +4,7 @@
 #include <netinet/tcp.h>
 #include <nmap.h>
 #include <string.h>
+#include <syscall.h>
 
 struct pseudo_iphdr {
     uint32_t saddr;
@@ -72,7 +73,7 @@ void print_nmap_error(struct nmap_error *error) {
     case NMAP_ERROR_SYS:
         print_sys_error(error);
         break;
-    case NMAP_ERROR_PING:
+    case NMAP_ERROR_ICMP:
         break;
     case NMAP_ERROR_WORKER:
         print_sys_error(error);
@@ -84,8 +85,8 @@ void print_nmap_error(struct nmap_error *error) {
 
 void print_worker(struct worker_handle *worker) {
     size_t nbr_tasks = ft_vector_size(worker->tasks_vec);
-    printf("Worker %lu (%hhu), %lu tasks:\n", worker->tid, worker->state,
-           nbr_tasks);
+    printf("Worker %ld (%hhu), %lu tasks:\n", syscall(SYS_gettid),
+           worker->state, nbr_tasks);
     while (nbr_tasks--) {
         print_task(&worker->tasks_vec[nbr_tasks]);
     }

@@ -4,6 +4,7 @@
 
 void print_worker(struct worker_handle *worker);
 void print_nmap_error(struct nmap_error *error);
+void print_task_result(struct task_handle *task);
 
 static void task_error(struct nmap_error **error_ptr, enum nmap_error_type type,
                        const char *func_fail, const char *detail) {
@@ -30,10 +31,12 @@ static void release_task(struct task_handle *task) {
                                       // the scan responsability to do it
         return;
     if (task->sock_main.pollfd) {
+        task->sock_main.pollfd->fd = -1;
         task->sock_main.pollfd->events = 0;
         task->sock_main.pollfd = NULL;
     }
     if (task->sock_icmp.pollfd) {
+        task->sock_icmp.pollfd->fd = -1;
         task->sock_icmp.pollfd->events = 0;
         task->sock_icmp.pollfd = NULL;
     }
@@ -41,6 +44,9 @@ static void release_task(struct task_handle *task) {
         task->release(task);
     task->flags.initialized = 0;
     task->flags.done = 1;
+    if ((task->flags.error == 1 && task->opts->verbose > 0) ||
+        task->opts->verbose > 1)
+        print_task_result(task);
 }
 
 static void cleanup(void *arg) {
@@ -56,6 +62,15 @@ static void cleanup(void *arg) {
 }
 
 static void free_vector(void *arg) { ft_vector_free((t_vector **)&arg); }
+static void print_exit(void *arg) {
+    struct worker_handle *worker = (struct worker_handle *)arg;
+    if (worker->opts->verbose > 2) {
+        printf("%s", TERM_CL_MAGENTA);
+        printf("Stopping worker...\n");
+        print_worker(worker);
+        printf("%s", TERM_CL_RESET);
+    }
+}
 
 static void cancel_worker(struct worker_handle *worker) {
     struct task_handle *task;
@@ -91,6 +106,8 @@ static void init_tasks(struct worker_handle *worker,
         task = &worker->tasks_vec[i];
         if (task->init && task->init(task) != 0) {
             task->flags.done = 1;
+            if (task->opts->verbose > 0)
+                print_task_result(task);
             continue;
         }
         if (task->sock_main.fd >= 0)
@@ -115,7 +132,8 @@ static unsigned int loop_running_tasks(struct worker_handle *worker,
     struct task_handle *task;
     unsigned int running;
     unsigned int i = running = ft_vector_size(worker->tasks_vec);
-    static struct timeval last = {.tv_sec = 0, .tv_usec = 0};
+    static __thread struct timeval last = {
+        .tv_sec = 0, .tv_usec = 0}; // HAS TO BE THREAD LOCAL
     struct timeval current, elapsed = {0};
 
     gettimeofday(&current, NULL);
@@ -149,6 +167,7 @@ static unsigned int loop_running_tasks(struct worker_handle *worker,
             // received and read but no answer was sent immediately)
             task->timeout = (struct timeval){.tv_sec = DFT_TASK_TIMEOUT};
             if (task->packet_send(task)) {
+                running--;
                 release_task(task);
                 continue;
                 ;
@@ -161,7 +180,8 @@ static unsigned int loop_running_tasks(struct worker_handle *worker,
             task_error(task->error, NMAP_ERROR_WORKER, "deadlock detected",
                        "task is in send state but no send handler provided");
             task->flags.error = 1;
-            task->flags.done = 1;
+            running--;
+            release_task(task);
         }
     }
     return (running);
@@ -174,20 +194,39 @@ static void handle_rcv(struct worker_handle *worker, unsigned int nrecv) {
     while (i-- && nrecv > 0) {
         task = &worker->tasks_vec[i];
         if (task->flags.done == 1)
-            continue; // Any completed (or cancelled task) should have its fd
-                      // removed from polling instance
-        if (task->sock_main.pollfd && task->sock_main.pollfd->events) {
+            continue; // Any completed (or cancelled task) should have its
+                      // fd removed from polling instance
+        if (task->sock_main.pollfd && task->sock_main.pollfd->revents) {
+            task->flags.main_rcv = 1;
             nrecv--;
-            if (task->packet_rcv && task->packet_rcv(task, &task->sock_main))
-                release_task(task);
+            if (task->packet_rcv) {
+                if (task->packet_rcv(task, *task->sock_main.pollfd))
+                    release_task(task);
+                task->flags.main_rcv = 0;
+            }
         }
-        if (task->sock_icmp.pollfd && task->sock_icmp.pollfd->events) {
+        if (task->sock_icmp.pollfd && task->sock_icmp.pollfd->revents) {
+            task->flags.icmp_rcv = 1;
             nrecv--;
-            if (task->packet_rcv && task->packet_rcv(task, &task->sock_icmp))
-                release_task(task);
+            if (task->packet_rcv) {
+                if (task->packet_rcv(task, *task->sock_icmp.pollfd))
+                    release_task(task);
+                task->flags.icmp_rcv = 0;
+            }
         }
     }
 }
+
+/* static void print_poll(struct pollfd *poll, unsigned int nfds) {
+    for (unsigned int i = 0; i < nfds; i++) {
+        if (poll[i].revents == 0)
+            continue;
+        printf("[%d] [%d] revents : %c%c%c (%hhu)\n", gettid(), poll[i].fd,
+               poll[i].revents & POLLIN ? 'I' : 0,
+               poll[i].revents & POLLERR ? 'E' : 0,
+               poll[i].revents & POLLHUP ? 'H' : 0, poll[i].revents);
+    }
+} */
 
 static void worker_loop(struct worker_handle *worker, struct pollfd *pollfds) {
     unsigned int running;
@@ -196,8 +235,10 @@ static void worker_loop(struct worker_handle *worker, struct pollfd *pollfds) {
 
     running = loop_running_tasks(worker, &timeout);
     while (running > 0) {
-        ret = poll(pollfds, worker->nbr_sock,
-                   timeout.tv_sec * 1e3 + timeout.tv_usec / 1e3);
+        ret = poll(
+            pollfds, worker->nbr_sock,
+            ft_max_i((int)timeout.tv_sec * 1000 + (int)(timeout.tv_usec / 1000),
+                     1));
         switch (ret) {
         case 0: // timeout
             break;
@@ -219,7 +260,15 @@ void *worker_routine(void *data) {
             ? ft_vector_create(sizeof(struct pollfd), worker->nbr_sock)
             : NULL;
 
+    if (worker->opts->verbose > 2) {
+        printf("%s", TERM_CL_MAGENTA);
+        printf("Starting worker...\n");
+        print_worker(worker);
+        printf("%s", TERM_CL_RESET);
+    }
+
     pthread_cleanup_push(cleanup, worker);
+    pthread_cleanup_push(print_exit, worker);
     pthread_cleanup_push(free_vector, vec_pollfds);
     if (worker->nbr_sock > 0 && vec_pollfds == NULL) {
         cancel_worker(worker);
@@ -228,6 +277,7 @@ void *worker_routine(void *data) {
     init_tasks(worker, vec_pollfds);
     worker_loop(worker, vec_pollfds);
 
+    pthread_cleanup_pop(1);
     pthread_cleanup_pop(1);
     pthread_cleanup_pop(1);
     pthread_exit(worker);

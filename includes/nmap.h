@@ -10,13 +10,13 @@
 #ifndef NMAP_H
 #define NMAP_H
 
-#define PING_TIMEOUT 5 // Default ping timeout
+#define PING_TIMEOUT 3 // Default ping timeout
 #define MAX_WORKER 250 // Maximum number of threads
 // Maximum number of task a worker can take (only UDP scan is able to scan
 // multiple port of a same host)
 #define MAX_TASK_WORKER 16
 #define MAX_PORT_NBR 1024U // Maximum different port nmap is allowed to scan
-#define MAX_RETRIES 3
+#define MAX_RETRIES 1
 
 // It's the task responspability (in send handler to override this default
 // timeout)
@@ -175,6 +175,7 @@ struct port_info {
     struct {
         uint8_t ttl;
         enum result_reason type;
+        float rtt;
     } reason;
     struct nmap_error *error; // Error related to a single port
     uint8_t retries;          // Number of time the task is retried
@@ -297,7 +298,7 @@ struct task_handle {
     ///
     // Expected flag in sock_instance->pollfd.events are POLLIN, POLLHUP and
     // POLLERR
-    int (*packet_rcv)(struct task_handle *data, struct sock_instance *sock);
+    int (*packet_rcv)(struct task_handle *data, struct pollfd poll);
 
     // WORKER : Called when timeout is toggled
     // timeout flags is set by worker but can be restaured (timeout must
@@ -316,11 +317,15 @@ struct task_handle {
                                  // flag is set to 0
         uint8_t send_state : 1;  // 0 => nothing sent, 1 => something sent
                                  // (waiting for related response)
-        uint8_t main_rcv : 1;    // incoming tcp/udp packet
-        uint8_t icmp_rcv : 1;    // incoming icmp (for ping only)
-        uint8_t timeout : 1;     // Timeout has been reached
-        uint8_t done : 1;        // Scan complete
-        uint8_t error : 1; // Error, ex: syscall error, task will not reassigned
+        uint8_t main_rcv : 1;    // incoming tcp/udp packet. Used by worker only
+        uint8_t icmp_rcv
+            : 1; // incoming icmp (for ping only). Used by worker only
+        uint8_t timeout : 1; // Timeout has been reached
+        uint8_t done : 1;    // Task complete, set by worker.
+        uint8_t error
+            : 1; // Error, ex: syscall error, task will not reassigned. A task
+                 // can succeed with non fatal error so the error flag does not
+                 // mean that a task has failed.
         uint8_t cancelled : 1; // The task failed to launch as it should, it
                                // will be later reassigned
     } flags;
@@ -336,13 +341,14 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
         WORKER_DONE
     } state;               // !!! atomic access only !!!
     unsigned int nbr_sock; // usefull for polling structure
+    t_options *opts;
     pthread_t tid;
 };
 
 enum nmap_error_type {
     NMAP_ERROR_DNS,    // Error related to DNS failure, likely
     NMAP_ERROR_SYS,    // Error related to system call failure, unlikely
-    NMAP_ERROR_PING,   // Error related to ping procedure
+    NMAP_ERROR_ICMP,   // Error related to ping procedure
     NMAP_ERROR_SCAN,   // Undefined
     NMAP_ERROR_WORKER, // Error related to deadlock condition or unexpected
                        // behaviour, mostly for debugging
@@ -361,11 +367,11 @@ struct nmap_error {
             char description[64];
         } sys;
         struct {
-            char func_fail[16];
-            char description[64];
+            struct iphdr iphdr;
             struct icmphdr icmphdr;
+            struct iphdr org_iphdr;
             uint8_t detail[8];
-        } ping;
+        } icmp;
         struct {
 
         } scan;

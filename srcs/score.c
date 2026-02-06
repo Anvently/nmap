@@ -1,5 +1,5 @@
-#include <ft_ping.h>
 #include <math.h>
+#include <nmap.h>
 
 float compute_rtt(struct timeval start, struct timeval end) {
     if (start.tv_sec == 0 || end.tv_sec == 0)
@@ -8,7 +8,7 @@ float compute_rtt(struct timeval start, struct timeval end) {
             ((end.tv_usec / 1000.f) - (start.tv_usec / 1000.f)));
 }
 
-static float get_stddev(t_ping_score *score) {
+/* static float get_stddev(t_ping_score *score) {
     if (score->total < 2)
         return (0.f);
     return (sqrt(score->M2 / (score->total - 1)));
@@ -38,4 +38,4 @@ void update_score(t_ping_score *score, float rtt) {
     score->mean += delta1 / score->total;
     delta2 = rtt - score->mean;
     score->M2 += delta1 * delta2;
-}
+} */

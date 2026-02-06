@@ -23,7 +23,7 @@ void user_input(struct host *vec_hosts,
 int dns_init(struct task_handle *data);
 int ping_init(struct task_handle *data);
 int ping_packet_send(struct task_handle *data);
-int ping_packet_rcv(struct task_handle *data, struct sock_instance *sock);
+int ping_packet_rcv(struct task_handle *data, struct pollfd sock);
 int ping_packet_timeout(struct task_handle *data);
 int ping_release(struct task_handle *data);
 
@@ -165,7 +165,7 @@ static void confirm_task(struct task_handle *task) {
 /// @param task
 /// @param nbr_socket used to increment the number of sockets the worker has to
 /// manage. Blocking task  (```SCAN_DNS``` and ```SCAN_CONNECT```) will be
-/// rejeced if nbr_socket > 0
+/// rejected if nbr_socket > 0
 /// @return ```false``` if no available task
 static bool assign_task(struct host *host, struct task_handle *task,
                         unsigned int *nbr_socket, t_options *opts) {
@@ -325,8 +325,8 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     struct scan_result *scan;
     bool ret;
 
-    if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose > 1)
-        print_task_result(&task);
+    // if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose > 1)
+    //     print_task_result(&task);
     scan = &task.host->scans[task.scan_type];
     switch (scan->type) {
     case SCAN_DNS:
@@ -350,6 +350,7 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         if (*task.error && (*task.error)->type == NMAP_ERROR_WORKER) {
             scan->ports[0].reason.type = REASON_ERROR;
         }
+        scan->remaining--;
         switch (scan->ports[0].reason.type) {
         case REASON_NO_RESPONSE:
             if (++scan->ports[0].retries >= MAX_RETRIES) {
@@ -363,7 +364,16 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
             scan->state = SCAN_PENDING;
             break;
 
+        case REASON_ICMP_REPLY:
+        case REASON_RST:
+        case REASON_SYN_ACK:
+        case REASON_USER_INPUT:
+            task.host->state = STATE_UP;
+            scan->state = SCAN_DONE;
+            break;
+
         case REASON_HOST_UNREACH:
+        case REASON_PORT_UNREACH:
             task.host->state = STATE_DOWN;
             scan->state = SCAN_DONE;
             break;
@@ -373,8 +383,8 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
             scan->state = SCAN_DONE;
             break;
 
-        default:
-            task.host->state = STATE_UP;
+        default: // UNEXPECTED REASON
+            task.host->state = STATE_ERROR;
             scan->state = SCAN_DONE;
             break;
         }
@@ -418,15 +428,10 @@ static void loop_worker_state(struct worker_handle *workers_pool,
             continue;
         if (pthread_join(workers_pool[i].tid, &ret))
             error(-1, errno, "joining thread");
-        if (opts->verbose > 2) {
-            printf("%s", TERM_CL_MAGENTA);
-            printf("Worker stopped...\n");
-            print_worker(&workers_pool[i]);
-            printf("%s", TERM_CL_RESET);
-        }
         handle_worker_result(&workers_pool[i], ret, vec_hosts, opts);
         ft_vector_free((t_vector **)&workers_pool[i].tasks_vec);
         workers_pool[i].state = WORKER_AVAILABLE;
+        workers_pool[i].nbr_sock = 0;
         workers_pool[i].tid = 0;
         (*nbr_workers)--;
     }
@@ -440,7 +445,7 @@ static void cancel_worker(struct worker_handle *worker, t_options *opts) {
     unsigned int i = ft_vector_size(worker->tasks_vec);
     if (opts->verbose > 2) {
         printf("%s", TERM_CL_MAGENTA);
-        printf("Cancelling worker...\n");
+        printf("Cancelling worker (from main thread)...\n");
         print_worker(worker);
         printf("%s", TERM_CL_RESET);
     }
@@ -505,16 +510,12 @@ init_worker(struct host *hosts_vec,
         return (NULL);
     }
     worker->state = WORKER_RUNNING;
+    worker->opts = opts;
     if (pthread_create(&worker->tid, NULL, worker_routine, worker)) {
         cancel_worker(worker, opts);
         return (NULL);
     }
-    if (opts->verbose > 2) {
-        printf("%s", TERM_CL_MAGENTA);
-        printf("Starting worker with address %p...\n", worker);
-        print_worker(worker);
-        printf("%s", TERM_CL_RESET);
-    }
+
     return (worker);
 }
 

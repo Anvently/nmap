@@ -24,17 +24,23 @@ char *get_ip_name(struct sockaddr *addr, bool resolve) {
 /// @param protocol
 /// @param port
 /// @return ```-1``` if socket() error, else ```-2``` if other error
-int socket_open_eph(t_options *opts, int protocol, uint16_t *port) {
-    (void)opts;
+int socket_open_eph(t_options *opts, int sock_type, uint16_t *port) {
     int fd;
     struct sockaddr_in addr = {.sin_addr = {.s_addr = INADDR_ANY},
                                .sin_family = AF_INET,
                                .sin_port = 0};
     socklen_t addr_len = sizeof(addr);
 
-    fd = socket(AF_INET, SOCK_STREAM, protocol);
+    fd = socket(AF_INET, sock_type, IPPROTO_IP);
     if (fd < 0)
         return (-1);
+    if (opts->interface) {
+        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, opts->interface,
+                       strlen(opts->interface))) {
+            close(fd);
+            return (-2);
+        }
+    }
     if (bind(fd, (const struct sockaddr *)&addr,
              (socklen_t)sizeof(struct sockaddr_in))) {
         close(fd);
