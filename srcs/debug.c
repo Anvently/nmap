@@ -50,20 +50,47 @@ const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
                                 [REASON_CONN_REFUSED] = "connection refused",
                                 [REASON_USER_INPUT] = "user input",
                                 [REASON_NO_RESPONSE] = "no response",
+                                [REASON_TIME_EXCEEDED] = "time exceeded",
                                 [REASON_ERROR] = "error"};
+
+static const char *icmp_type_strings[] = {
+    [ICMP_ECHOREPLY] = "ECHO REPLY",
+    [ICMP_DEST_UNREACH] = "UNREACH",
+    [ICMP_SOURCE_QUENCH] = "SOURCE QUENCH",
+    [ICMP_REDIRECT] = "REDIRECT",
+    [ICMP_ECHO] = "ECHO",
+    [ICMP_TIME_EXCEEDED] = "TIME EXCEEDED",
+    [ICMP_PARAMPROB] = "PARAM PROB",
+    [ICMP_TIMESTAMP] = "TIMESTAMP",
+    [ICMP_TIMESTAMPREPLY] = "TIMESTAMP REPLY",
+    [ICMP_INFO_REQUEST] = "INFO REQUEST",
+    [ICMP_INFO_REPLY] = "INFO REPLY",
+    [ICMP_ADDRESS] = "ADDRESS",
+    [ICMP_ADDRESSREPLY] = "ADDRESS REPLY"};
 
 void print_worker(struct worker_handle *worker);
 void print_task(struct task_handle *task);
 void print_host(struct host *);
 void print_scan_state(struct scan_result *scan);
-void print_verbose_ip(struct iphdr *iphdr);
-void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size);
-void print_verbose_tcp(struct tcphdr *tcphdr);
+void print_verbose_ip(struct iphdr *iphdr, unsigned int padding);
+void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size,
+                        unsigned int padding);
+void print_verbose_tcp(struct tcphdr *tcphdr, unsigned int padding);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
+static void _print_verbose_packet_pad(const char *buffer, size_t len,
+                                      unsigned int padding);
+
+void print_packet_short(const char *buffer, const char *hdr);
+
 void print_nmap_error(struct nmap_error *error);
 static void print_dns_error(struct nmap_error *error);
 static void print_sys_error(struct nmap_error *error);
+static void print_icmp_error(struct nmap_error *error);
+
+void print_verbose_packet(const char *buffer, size_t len) {
+    _print_verbose_packet_pad(buffer, len, 0);
+}
 
 void print_nmap_error(struct nmap_error *error) {
     switch (error->type) {
@@ -74,6 +101,7 @@ void print_nmap_error(struct nmap_error *error) {
         print_sys_error(error);
         break;
     case NMAP_ERROR_ICMP:
+        print_icmp_error(error);
         break;
     case NMAP_ERROR_WORKER:
         print_sys_error(error);
@@ -157,38 +185,40 @@ void print_host(struct host *host) {
     printf("---\n");
 }
 
-void print_verbose_ip(struct iphdr *iphdr) {
+void print_verbose_ip(struct iphdr *iphdr, unsigned int padding) {
 
-    printf("IP Hdr Dump:\n");
+    printf("%2$*1$sIP Hdr Dump:\n%2$*1$s", padding, "");
     for (unsigned int i = 0; i < sizeof(struct iphdr); i += 2)
         printf(" %04x", ntohs(*((uint16_t *)((char *)iphdr + i))));
-    printf("\nVr HL TOS  Len   ID Flg  off TTL Pro  cks      Src	Dst	Data\n"
-           " %hhx  %hhx  %02hhx %04hx %04hx   %hhx %04hx  %02hhx  %02hhx %04hx "
-           "%-11s",
-           (uint8_t)iphdr->version, (uint8_t)iphdr->ihl, iphdr->tos,
-           ntohs(iphdr->tot_len), ntohs(iphdr->id),
-           (ntohs(iphdr->frag_off) & (0b111 << 13)) >> 13,
-           ntohs(iphdr->frag_off) & ~(0b111 << 13), iphdr->ttl, iphdr->protocol,
-           ntohs(iphdr->check),
-           inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}));
+    printf(
+        "\n%*sVr HL TOS  Len   ID Flg  off TTL Pro  cks      Src	Dst	Data\n"
+        "%*s %hhx  %hhx  %02hhx %04hx %04hx   %hhx %04hx  %02hhx  %02hhx %04hx "
+        "%-11s",
+        padding, "", padding, "", (uint8_t)iphdr->version, (uint8_t)iphdr->ihl,
+        iphdr->tos, ntohs(iphdr->tot_len), ntohs(iphdr->id),
+        (ntohs(iphdr->frag_off) & (0b111 << 13)) >> 13,
+        ntohs(iphdr->frag_off) & ~(0b111 << 13), iphdr->ttl, iphdr->protocol,
+        ntohs(iphdr->check),
+        inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}));
     printf(" %s\n", inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}));
 }
 
-void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size) {
+void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size,
+                        unsigned int padding) {
     struct iphdr *iphdr;
 
     printf(
-        "ICMP: type %hhu, code %hhu, size %hu\n", icmp_hdr->type,
-        icmp_hdr->code,
+        "%*sICMP: type %hhu, code %hhu, size %hu\n", padding, "",
+        icmp_hdr->type, icmp_hdr->code,
         (uint16_t)(size - (sizeof(struct icmphdr) + 2 * sizeof(struct iphdr))));
     switch (icmp_hdr->type) {
     case ICMP_ECHO:
-        printf(
-            "ICMP: type %hhu, code %hhu, size %hu, id 0x%04hx, seq 0x%04hx\n",
-            icmp_hdr->type, icmp_hdr->code,
-            (uint16_t)(size -
-                       (sizeof(struct icmphdr) + 2 * sizeof(struct iphdr))),
-            ntohs(icmp_hdr->un.echo.id), ntohs(icmp_hdr->un.echo.sequence));
+        printf("%*sICMP: type %hhu, code %hhu, size %hu, id 0x%04hx, seq "
+               "0x%04hx\n",
+               padding, "", icmp_hdr->type, icmp_hdr->code,
+               (uint16_t)(size -
+                          (sizeof(struct icmphdr) + 2 * sizeof(struct iphdr))),
+               ntohs(icmp_hdr->un.echo.id), ntohs(icmp_hdr->un.echo.sequence));
         break;
     case ICMP_ECHOREPLY:
     case ICMP_TIMESTAMP:
@@ -196,25 +226,25 @@ void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size) {
 
     default:
         iphdr = (struct iphdr *)(icmp_hdr + 1);
-        printf("Original Packet:\n");
-        print_verbose_packet((const char *)iphdr,
-                             size - sizeof(struct icmphdr));
+        printf("%*sOriginal Packet:\n", padding, "");
+        _print_verbose_packet_pad((const char *)iphdr,
+                                  size - sizeof(struct icmphdr), padding + 2);
         break;
     }
 }
 
-void print_verbose_tcp(struct tcphdr *tcphdr) {
-    printf("TCP Hdr Dump:\n");
+void print_verbose_tcp(struct tcphdr *tcphdr, unsigned int padding) {
+    printf("%2$*1$sTCP Hdr Dump:\n%2$*1$s", padding, "");
     for (unsigned int i = 0; i < sizeof(struct tcphdr); i += 2)
         printf(" %04x", ntohs(*((uint16_t *)((char *)tcphdr + i))));
-    printf(
-        "\n  Src   Dst Seq      Ack     off Flags    Win  cks  Urg\n"
-        "%5hu %5hu %06x %06x   %hhx  %c%c%c%c%c%c        %04hx %04hx %04hx\n",
-        ntohs(tcphdr->source), ntohs(tcphdr->dest), ntohl(tcphdr->seq),
-        ntohl(tcphdr->ack), tcphdr->th_off, tcphdr->fin ? 'F' : 0,
-        tcphdr->syn ? 'S' : 0, tcphdr->rst ? 'R' : 0, tcphdr->psh ? 'P' : 0,
-        tcphdr->ack ? 'A' : 0, tcphdr->urg ? 'U' : 0, ntohs(tcphdr->window),
-        ntohs(tcphdr->check), ntohs(tcphdr->urg_ptr));
+    printf("\n%*s  Src   Dst Seq      Ack     off Flags    Win  cks  Urg\n"
+           "%*s%5hu %5hu %06x %06x   %hhx  %c%c%c%c%c%c        %04hx %04hx "
+           "%04hx\n",
+           padding, "", padding, "", ntohs(tcphdr->source), ntohs(tcphdr->dest),
+           ntohl(tcphdr->seq), ntohl(tcphdr->ack), tcphdr->th_off,
+           tcphdr->fin ? 'F' : 0, tcphdr->syn ? 'S' : 0, tcphdr->rst ? 'R' : 0,
+           tcphdr->psh ? 'P' : 0, tcphdr->ack ? 'A' : 0, tcphdr->urg ? 'U' : 0,
+           ntohs(tcphdr->window), ntohs(tcphdr->check), ntohs(tcphdr->urg_ptr));
 }
 
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr) {
@@ -229,15 +259,107 @@ void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr) {
            ntohs(iphdr->tcp_len));
 }
 
-void print_verbose_packet(const char *buffer, size_t len) {
-    print_verbose_ip((struct iphdr *)buffer);
+static void _print_verbose_packet_pad(const char *buffer, size_t len,
+                                      unsigned int padding) {
+    print_verbose_ip((struct iphdr *)buffer, padding);
     if (len < sizeof(struct iphdr))
         return;
     if (((struct iphdr *)buffer)->protocol == IPPROTO_TCP) {
-        print_verbose_tcp((struct tcphdr *)(buffer + sizeof(struct iphdr)));
+        print_verbose_tcp((struct tcphdr *)(buffer + sizeof(struct iphdr)),
+                          padding + 2);
     } else if (((struct iphdr *)buffer)->protocol == IPPROTO_ICMP) {
         print_verbose_icmp((struct icmphdr *)(buffer + sizeof(struct iphdr)),
-                           len - sizeof(struct iphdr));
+                           len - sizeof(struct iphdr), padding + 2);
+    }
+}
+
+static void _print_icmp_org_packet(const struct iphdr *iphdr, int padding) {
+    const struct tcphdr *tcphdr = (const struct tcphdr *)(iphdr + 1);
+    const struct icmphdr *icmphdr = (const struct icmphdr *)(iphdr + 1);
+    switch (iphdr->protocol) {
+    case IPPROTO_ICMP:
+        printf("%*sICMP [%s > ", padding, "",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}));
+        printf("%s %s (type=%hhu/code=%hhu)",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
+               icmp_type_strings[icmphdr->type], icmphdr->type, icmphdr->code);
+        switch (icmphdr->type) {
+        case ICMP_ECHO:
+        case ICMP_ECHOREPLY:
+            printf(" id=%hu seq=%hu] IP [ttl=%hhu, id=%hu, iplen=%hu]\n",
+                   ntohs(icmphdr->un.echo.id), ntohs(icmphdr->un.echo.sequence),
+                   iphdr->ttl, ntohs(iphdr->id), ntohs(iphdr->tot_len));
+            break;
+        default:
+            printf("] IP [ttl=%hhu, id=%hu, iplen=%hu]\n", iphdr->ttl,
+                   ntohs(iphdr->id), ntohs(iphdr->tot_len));
+        }
+        break;
+    case IPPROTO_TCP:
+        printf("%*sTCP %s:%hu > ", padding, "",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}),
+               ntohs(tcphdr->th_sport));
+        printf("%s:%hu ttl=%hhu id=%hu iplen=%hu seq=%u \n",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
+               ntohs(tcphdr->th_dport), iphdr->ttl, ntohs(iphdr->id),
+               ntohs(iphdr->tot_len), ntohl(tcphdr->seq));
+        break;
+    default:
+        printf("UNSUPPORTED PROTOCOL");
+    }
+}
+
+void print_packet_short(const char *buffer, const char *hdr) {
+    const struct iphdr *iphdr = (const struct iphdr *)buffer;
+    const struct tcphdr *tcphdr =
+        (const struct tcphdr *)(buffer + sizeof(*iphdr));
+    const struct icmphdr *icmphdr =
+        (const struct icmphdr *)(buffer + sizeof(*iphdr));
+    int padding = printf("[%d] %s ", gettid(), hdr ? hdr : "");
+    switch (iphdr->protocol) {
+    case IPPROTO_ICMP:
+        printf("ICMP [%s > ",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}));
+        printf("%s %s (type=%hhu/code=%hhu)",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
+               icmp_type_strings[icmphdr->type], icmphdr->type, icmphdr->code);
+        switch (icmphdr->type) {
+        case ICMP_ECHO:
+        case ICMP_ECHOREPLY:
+            printf(" id=%hu seq=%hu] IP [ttl=%hhu, id=%hu, iplen=%hu]\n",
+                   ntohs(icmphdr->un.echo.id), ntohs(icmphdr->un.echo.sequence),
+                   iphdr->ttl, ntohs(iphdr->id), ntohs(iphdr->tot_len));
+            break;
+
+        case ICMP_TIMESTAMP:
+        case ICMP_TIMESTAMPREPLY:
+        case ICMP_INFO_REQUEST:
+        case ICMP_INFO_REPLY:
+            printf("] IP [ttl=%hhu, id=%hu, iplen=%hu]\n", iphdr->ttl,
+                   ntohs(iphdr->id), ntohs(iphdr->tot_len));
+            break;
+        default:
+            printf("] IP [ttl=%hhu, id=%hu, iplen=%hu]\n", iphdr->ttl,
+                   ntohs(iphdr->id), ntohs(iphdr->tot_len));
+            _print_icmp_org_packet((const struct iphdr *)(icmphdr + 1),
+                                   padding);
+        }
+        break;
+    case IPPROTO_TCP:
+        printf("TCP %s:%hu > ",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}),
+               ntohs(tcphdr->th_sport));
+        printf("%s:%hu %c%c%c%c%c%c ttl=%hhu id=%hu iplen=%hu seq=%u win=%hu\n",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
+               ntohs(tcphdr->th_dport), tcphdr->fin ? 'F' : 0,
+               tcphdr->syn ? 'S' : 0, tcphdr->rst ? 'R' : 0,
+               tcphdr->psh ? 'P' : 0, tcphdr->ack ? 'A' : 0,
+               tcphdr->urg ? 'U' : 0, iphdr->ttl, ntohs(iphdr->id),
+               ntohs(iphdr->tot_len), ntohl(tcphdr->seq),
+               ntohs(tcphdr->th_win));
+        break;
+    default:
+        printf("UNSUPPORTED PROTOCOL");
     }
 }
 
@@ -250,4 +372,10 @@ static void print_sys_error(struct nmap_error *error) {
     printf("%s: %s", error->u.sys.func_fail, error->u.sys.description);
     if (error->error != 0)
         printf(" => %s (%d)", strerror(error->error), error->error);
+}
+static void print_icmp_error(struct nmap_error *error) {
+    printf("[ICMP] %s (%hhu) from %s",
+           icmp_type_strings[error->u.icmp.icmphdr.type],
+           error->u.icmp.icmphdr.type,
+           inet_ntoa((struct in_addr){.s_addr = error->u.icmp.iphdr.saddr}));
 }

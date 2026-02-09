@@ -374,15 +374,12 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
 
         case REASON_HOST_UNREACH:
         case REASON_PORT_UNREACH:
+        case REASON_TIME_EXCEEDED:
             task.host->state = STATE_DOWN;
             scan->state = SCAN_DONE;
             break;
 
         case REASON_ERROR:
-            task.host->state = STATE_ERROR;
-            scan->state = SCAN_DONE;
-            break;
-
         default: // UNEXPECTED REASON
             task.host->state = STATE_ERROR;
             scan->state = SCAN_DONE;

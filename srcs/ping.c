@@ -27,26 +27,9 @@ struct ping_context {
         ICMPSTATE_ECHO_SENT,
         ICMPSTATE_RCV, // Never set
     } icmp_state;
-    size_t len;         // Variable
     size_t pattern_idx; // Idx where pattern start (or headers end)
     struct timeval send_stamp;
-    struct timeval rcv_stamp;
-    union {
-        struct {
-            struct iphdr iphdr;
-            union {
-                struct {
-                    struct tcphdr tcphdr;
-                    char payload[];
-                } tcp;
-                struct {
-                    struct icmphdr icmphdr;
-                    char payload[];
-                } icmp;
-            };
-        };
-        char raw[1024];
-    } buffer;
+    struct packet packet;
 };
 
 int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
@@ -75,13 +58,15 @@ static void icmp_error(struct nmap_error **error_ptr,
         return;
     error->type = NMAP_ERROR_ICMP;
     error->error = 0;
-    error->u.icmp.iphdr = ctx->buffer.iphdr;
-    error->u.icmp.icmphdr = ctx->buffer.icmp.icmphdr;
-    if (ctx->len >= 2 * sizeof(struct iphdr) + sizeof(struct icmphdr))
-        error->u.icmp.org_iphdr = *(struct iphdr *)&ctx->buffer.icmp.payload;
-    if (ctx->len >= 2 * sizeof(struct iphdr) + sizeof(struct icmphdr) + 8)
+    error->u.icmp.iphdr = ctx->packet.buffer.iphdr;
+    error->u.icmp.icmphdr = ctx->packet.buffer.icmp.icmphdr;
+    if (ctx->packet.len >= 2 * sizeof(struct iphdr) + sizeof(struct icmphdr))
+        error->u.icmp.org_iphdr =
+            *(struct iphdr *)&ctx->packet.buffer.icmp.payload;
+    if (ctx->packet.len >=
+        2 * sizeof(struct iphdr) + sizeof(struct icmphdr) + 8)
         memcpy(&error->u.icmp.detail,
-               ctx->buffer.icmp.payload + sizeof(struct iphdr), 8);
+               ctx->packet.buffer.icmp.payload + sizeof(struct iphdr), 8);
 }
 
 int ping_init(struct task_handle *data);
@@ -97,42 +82,88 @@ static int send_syn(struct task_handle *data) {
     ssize_t ret;
 
     ctx->pattern_idx = sizeof(struct iphdr) + sizeof(struct tcphdr);
-    ctx->len = ctx->pattern_idx + data->opts->size;
-    fill_pattern(data->opts->pattern, ctx->buffer.raw + ctx->pattern_idx,
+    ctx->packet.len = ctx->pattern_idx + data->opts->size;
+    fill_pattern(data->opts->pattern, ctx->packet.buffer.raw + ctx->pattern_idx,
                  data->opts->size);
-    init_iphdr(&ctx->buffer.iphdr, ctx->len, IPPROTO_TCP, data->opts);
-    ctx->buffer.iphdr.saddr = data->io_data.ping.saddr.sin_addr.s_addr;
-    ctx->buffer.iphdr.daddr = data->io_data.ping.daddr.s_addr;
+    init_iphdr(&ctx->packet.buffer.iphdr, ctx->packet.len, IPPROTO_TCP,
+               data->opts);
+    ctx->packet.buffer.iphdr.saddr = data->io_data.ping.saddr.sin_addr.s_addr;
+    ctx->packet.buffer.iphdr.daddr = data->io_data.ping.daddr.s_addr;
     init_tcphdr(
-        &ctx->buffer.tcp.tcphdr,
+        &ctx->packet.buffer.tcp.tcphdr,
         (struct tcp_params){.ack = 0,
                             .seq = 0,
-                            .tcp_len = ctx->len - sizeof(struct iphdr),
+                            .tcp_len = ctx->packet.len - sizeof(struct iphdr),
                             .flags = TH_SYN,
                             .sport = ntohs(data->io_data.ping.saddr.sin_port),
                             .dport = 80});
-    calc_tcp_sum_pkt(ctx->buffer.raw, ctx->len);
+    calc_tcp_sum_pkt(ctx->packet.buffer.raw, ctx->packet.len);
 
-    ret = send(data->sock_main.fd, ctx->buffer.raw, ctx->len, 0);
+    ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
         sys_error(data->error, "send", "sending tcp syn");
         data->flags.error = 1;
         data->flags.cancelled = 1;
         return (1);
-    } else if (ret == 0 || (size_t)ret != ctx->len) {
+    } else if (ret == 0 || (size_t)ret != ctx->packet.len) {
         fprintf(stderr,
                 "Warning: unexpected sent of %ld instead of %lu for tcp syn\n",
-                ret, ctx->len);
+                ret, ctx->packet.len);
         return (0);
     }
     return (0);
 }
 
-static int rcv_packet_pollin(struct task_handle *data, int fd) {
+static int send_echo(struct task_handle *data) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
     ssize_t ret;
 
-    ret = recv(fd, ctx->buffer.raw, sizeof(ctx->buffer.raw), 0);
+    ctx->pattern_idx = sizeof(struct iphdr) + sizeof(struct icmphdr);
+    ctx->packet.len = ctx->pattern_idx + data->opts->size;
+    fill_pattern(data->opts->pattern, ctx->packet.buffer.raw + ctx->pattern_idx,
+                 data->opts->size);
+    init_iphdr(&ctx->packet.buffer.iphdr, ctx->packet.len, IPPROTO_ICMP,
+               data->opts);
+    ctx->packet.buffer.iphdr.saddr = data->io_data.ping.saddr.sin_addr.s_addr;
+    ctx->packet.buffer.iphdr.daddr = data->io_data.ping.daddr.s_addr;
+    init_icmphdr(&ctx->packet.buffer.icmp.icmphdr, ICMP_ECHO,
+                 (uint16_t)(gettid() % UINT16_MAX), 0);
+    calc_icmp_sum_pkt(ctx->packet.buffer.raw, ctx->packet.len);
+
+    ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
+    if (ret < 0) {
+        sys_error(data->error, "send", "sending icmp echo");
+        data->flags.error = 1;
+        data->flags.cancelled = 1;
+        return (1);
+    } else if (ret == 0 || (size_t)ret != ctx->packet.len) {
+        fprintf(
+            stderr,
+            "Warning: unexpected sent of %ld instead of %lu for icmp echo\n",
+            ret, ctx->packet.len);
+        return (0);
+    }
+    return (0);
+}
+
+static int rcv_packet(struct task_handle *data, struct pollfd poll) {
+    struct ping_context *ctx = (struct ping_context *)data->ctx;
+    struct iovec iovec;
+    ssize_t ret;
+
+    if (poll.revents & POLLHUP) {
+        fprintf(stderr, "Received POLLHUP\n");
+        return (1);
+    } else if (poll.revents & POLLERR) { // Incoming error
+        iovec.iov_base = &ctx->packet.buffer.icmp_error.org_iphdr;
+        iovec.iov_len = (char *)(&ctx->packet.buffer + 1) -
+                        (char *)&ctx->packet.buffer.icmp_error.org_iphdr;
+        ret = rcv_packet_msg(poll.fd, &ctx->packet, &iovec, MSG_ERRQUEUE);
+    } else if (poll.revents & POLLIN) { // Incoming read
+        iovec.iov_base = &ctx->packet.buffer.raw;
+        iovec.iov_len = sizeof(ctx->packet.buffer);
+        ret = rcv_packet_msg(poll.fd, &ctx->packet, &iovec, 0);
+    }
     if (ret < 0) {
         sys_error(data->error, "recv", "reading incoming packet");
         data->flags.error = 1;
@@ -140,27 +171,8 @@ static int rcv_packet_pollin(struct task_handle *data, int fd) {
         return (1);
     } else if (ret == 0) {
         error(1, errno, "unexpected read of 0");
-    }
-    gettimeofday(&ctx->rcv_stamp, NULL);
-    ctx->len = (size_t)ret;
-    return (0);
-}
-
-static int rcv_packet_pollerr(struct task_handle *data, int fd) {
-    printf("NOT IMPLEMENTED\n");
-    (void)data;
-    (void)fd;
-    return (0);
-}
-
-static int rcv_packet(struct task_handle *data, struct pollfd poll) {
-    if (poll.revents & POLLHUP) {
-        fprintf(stderr, "Received POLLHUP\n");
-        return (1);
-    } else if (poll.revents & POLLERR) { // Incoming error
-        return (rcv_packet_pollerr(data, poll.fd));
-    } else if (poll.revents & POLLIN) { // Incoming read
-        return (rcv_packet_pollin(data, poll.fd));
+    } else {
+        ctx->packet.len = ret;
     }
     return (0);
 }
@@ -172,43 +184,54 @@ static int rcv_packet(struct task_handle *data, struct pollfd poll) {
 /// @return
 static int handle_packet_rcv(struct task_handle *data) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
-    uint8_t proto = ctx->buffer.iphdr.protocol;
+    uint8_t proto = ctx->packet.buffer.iphdr.protocol;
     data->io_data.ping.rslt->reason.rtt =
-        compute_rtt(ctx->send_stamp, ctx->rcv_stamp);
+        compute_rtt(ctx->send_stamp, ctx->packet.stamp);
 
     switch (proto) {
     case IPPROTO_TCP:
         // we probably dont need to actually check the content of the returned
         // tcp header.
-        if (ctx->buffer.tcp.tcphdr.th_flags & TH_RST)
+        if (ctx->packet.buffer.tcp.tcphdr.th_flags & TH_RST)
             data->io_data.ping.rslt->reason.type = REASON_RST;
-        else if (ctx->buffer.tcp.tcphdr.th_flags & TH_SYN)
+        else if (ctx->packet.buffer.tcp.tcphdr.th_flags & TH_SYN)
             data->io_data.ping.rslt->reason.type = REASON_SYN_ACK;
         else
             data->io_data.ping.rslt->reason.type = REASON_UNKNOWN;
-        data->io_data.ping.rslt->reason.ttl = ctx->buffer.iphdr.ttl;
+        data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
         return (1);
 
     case IPPROTO_ICMP:
-        switch (ctx->buffer.icmp.icmphdr.type) {
+        switch (ctx->packet.buffer.icmp.icmphdr.type) {
         case ICMP_ECHO:
             break;
+        case ICMP_TIMESTAMP:
+            break;
         case ICMP_ECHOREPLY:
+        case ICMP_TIMESTAMPREPLY:
             data->io_data.ping.rslt->reason.type = REASON_ICMP_REPLY;
-            data->io_data.ping.rslt->reason.ttl = ctx->buffer.iphdr.ttl;
+            data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
+            return (1);
+        case ICMP_TIME_EXCEEDED:
+            data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
+            data->io_data.ping.rslt->reason.type = REASON_TIME_EXCEEDED;
+            icmp_error(data->error, ctx);
             return (1);
         case ICMP_DEST_UNREACH:
-            data->io_data.ping.rslt->reason.ttl = ctx->buffer.iphdr.ttl;
-            if (ctx->buffer.icmp.icmphdr.code == ICMP_HOST_UNREACH) {
+            data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
+            if (ctx->packet.buffer.icmp.icmphdr.code == ICMP_HOST_UNREACH) {
                 data->io_data.ping.rslt->reason.type = REASON_HOST_UNREACH;
                 return (1);
-            } else if (ctx->buffer.icmp.icmphdr.code == ICMP_PORT_UNREACH) {
+            } else if (ctx->packet.buffer.icmp.icmphdr.code ==
+                       ICMP_PORT_UNREACH) {
                 data->io_data.ping.rslt->reason.type = REASON_PORT_UNREACH;
                 return (1);
             }
             /* FALLTHRU */
+        case ICMP_REDIRECT:
+        case ICMP_SOURCE_QUENCH:
         default:
-            data->io_data.ping.rslt->reason.ttl = ctx->buffer.iphdr.ttl;
+            data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
             data->io_data.ping.rslt->reason.type = REASON_UNKNOWN;
             icmp_error(data->error, ctx);
             return (1);
@@ -217,7 +240,7 @@ static int handle_packet_rcv(struct task_handle *data) {
 
     default:
         fprintf(stderr, "Unexpected protocol received\n");
-        print_verbose_packet(ctx->buffer.raw, ctx->len);
+        print_verbose_packet(ctx->packet.buffer.raw, ctx->packet.len);
         return (0);
     }
     return (0);
@@ -289,11 +312,14 @@ int ping_packet_send(struct task_handle *data) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
     switch (ctx->tcp_state) {
     case TCPSTATE_START: // SEND tcp syn
-        gettimeofday(&ctx->send_stamp, NULL);
         if (send_syn(data))
             return (1);
+        gettimeofday(&ctx->send_stamp, NULL);
+        if (data->opts->trace_packet)
+            print_packet_short(ctx->packet.buffer.raw, "SND");
         ctx->tcp_state = TCPSTATE_SYN_SENT;
         data->timeout = (struct timeval){.tv_sec = PING_TIMEOUT};
+        data->flags.send_state = 1;
         break;
     case TCPSTATE_SYN_SENT: // Maybe there is still an ICMP echo request to
                             // send
@@ -310,12 +336,17 @@ int ping_packet_send(struct task_handle *data) {
     default:
         error(1, errno, "invalid tcp state");
     }
-    data->flags.send_state = 1;
-
-    return (0); // DISABLE ICMP FOR NOW
 
     switch (ctx->icmp_state) {
     case ICMPSTATE_START: // SEND icmp echo
+        if (send_echo(data))
+            return (1);
+        gettimeofday(&ctx->send_stamp, NULL);
+        if (data->opts->trace_packet)
+            print_packet_short(ctx->packet.buffer.raw, "SND");
+        data->flags.send_state = 1;
+        data->timeout = (struct timeval){.tv_sec = PING_TIMEOUT};
+        ctx->icmp_state = ICMPSTATE_ECHO_SENT;
         break;
 
     case ICMPSTATE_ECHO_SENT:
@@ -341,14 +372,16 @@ int ping_packet_rcv(struct task_handle *data, struct pollfd poll) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
 
     if (rcv_packet(data, poll)) {
-        print_verbose_packet(ctx->buffer.raw, ctx->len);
+        // print_verbose_packet(ctx->packet.buffer.raw, ctx->packet.len);
         return (1);
     }
+    if (data->opts->trace_packet)
+        print_packet_short(ctx->packet.buffer.raw, "RCV");
     if (poll.fd == data->sock_main.fd) { // TCP
         switch (ctx->tcp_state) {
         case TCPSTATE_START:
             fprintf(stderr, "Received incoming packet but nothing was sent");
-            print_verbose_packet(ctx->buffer.raw, ctx->len);
+            print_verbose_packet(ctx->packet.buffer.raw, ctx->packet.len);
             break;
         case TCPSTATE_SYN_SENT: // Handle packet
             if (handle_packet_rcv(data))
@@ -363,7 +396,7 @@ int ping_packet_rcv(struct task_handle *data, struct pollfd poll) {
         switch (ctx->icmp_state) {
         case ICMPSTATE_START:
             fprintf(stderr, "Received incoming packet but nothing was sent");
-            print_verbose_packet(ctx->buffer.raw, ctx->len);
+            print_verbose_packet(ctx->packet.buffer.raw, ctx->packet.len);
             break;
         case ICMPSTATE_ECHO_SENT: // Handle packet
             if (handle_packet_rcv(data))

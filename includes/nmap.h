@@ -42,8 +42,9 @@ enum OPTIONS {
     OPT_LIST,           // -L, --list
     OPT_SKIP_DISCOVERY, // --skip-ping
     OPT_SRC_PORT,       // -g, --source-port
-    OPT_OPEN,           // --open
-    OPT_ALL,            // --all
+    OPT_TRACE_PACKET,
+    OPT_OPEN, // --open
+    OPT_ALL,  // --all
     // CUSTOMs
     OPT_PORT,    // -p, --port
     OPT_THREADS, // -t, --threads (0 à 250)
@@ -97,6 +98,7 @@ struct s_options {
     uint16_t threads;
     union scan_list enabled_scan; // 1 scan = 1 bit
     const char *file;
+    bool trace_packet;
 };
 
 enum host_state {
@@ -166,6 +168,7 @@ enum result_reason {
     REASON_CONN_REFUSED,
     REASON_USER_INPUT,
     REASON_NO_RESPONSE,
+    REASON_TIME_EXCEEDED,
     REASON_ERROR
 } __attribute__((__packed__));
 

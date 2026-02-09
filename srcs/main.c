@@ -23,6 +23,7 @@ Scan host port and more.\n\
       --all                     display every port, even those marked as filtered or closed\n\
       --skip-ping               skip host discorvery and treat all hosts as online\n\
   -L, --list                    only list host that responded to ping but do not scan ports\n\
+      --trace-packet            print every packet sended and received\n\
   -p, --port=[PORT,MIN-MAX,...] specify custom port to scan, takes individual port or ranges (default to 1-1024)\n\
   -t, --threads                 specify a maximum number of threads to use (1-250), default to 16\n\
   -s, --scan=[list...]          specify which scan to use (default to all)\n\

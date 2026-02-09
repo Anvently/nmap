@@ -2,7 +2,7 @@
 #include <netinet/ip.h>
 #include <nmap.h>
 
-extern const char *reason_strings[10];
+extern const char *reason_strings[11];
 extern const char *host_state_strings[14];
 extern const char *scan_type_strings[11];
 
@@ -84,7 +84,8 @@ void print_scan_result(struct scan_result *result, struct host *host,
         if (result->error) {
             printf(", ");
             print_nmap_error(result->error);
-        } else
+        }
+        if (result->ports->reason.ttl != 0 || result->ports->reason.rtt != 0.f)
             printf(" (ttl = %hhu, rtt = %.2f ms)", result->ports->reason.ttl,
                    result->ports->reason.rtt);
         break;
@@ -107,13 +108,7 @@ void print_host_result(struct host *host, t_options *opts) {
            host->hostname_rsvl ? host->hostname_rsvl : "unkown",
            host_state_strings[host->state]);
     print_scan_result(&host->scans[SCAN_DNS], host, opts);
-    if (host->state > STATE_RESOLVE_FAILED)
-        print_scan_result(&host->scans[SCAN_PING], host, opts);
-    if (host->state < STATE_SCAN_PENDING) {
-        printf("---\n");
-        return;
-    }
-    for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
+    for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
         if (host->scans[i].state > SCAN_DISABLE)
             print_scan_result(&host->scans[i], host, opts);
     }

@@ -23,6 +23,7 @@ static int register_ports(t_options *opt, char *);
 static int register_threads(t_options *opt, char *);
 static int register_scan(t_options *opt, char *);
 static int register_file(t_options *opt, char *);
+static int register_trace_packet(t_options *opt, char *);
 
 int NBR_OPTIONS = OPT_NBR;
 t_opt_flag options_list[OPT_NBR] = {
@@ -106,6 +107,10 @@ t_opt_flag options_list[OPT_NBR] = {
                               .handler = &register_file,
                               .short_id = 'f',
                               .long_id = "file"},
+    [OPT_TRACE_PACKET] = (t_opt_flag){.arg = ARG_NONE,
+                                      .handler = &register_trace_packet,
+                                      .short_id = 0,
+                                      .long_id = "trace-packet"},
 };
 
 t_opt_flag *options_map = &options_list[0];
@@ -319,5 +324,12 @@ int check_options(t_options *options) {
         options->enabled_scan.raw_udp = 1;
     }
 
+    return (0);
+}
+
+static int register_trace_packet(t_options *opt, char *arg) {
+    (void)arg;
+    (void)opt;
+    opt->trace_packet = true;
     return (0);
 }

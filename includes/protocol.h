@@ -7,6 +7,32 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
+struct packet {
+    size_t len;
+    struct timeval stamp;
+    union {
+        struct {
+            struct iphdr iphdr;
+            union {
+                struct {
+                    struct tcphdr tcphdr;
+                    char payload[];
+                } tcp;
+                struct {
+                    struct icmphdr icmphdr;
+                    char payload[];
+                } icmp;
+                struct {
+                    struct icmphdr icmphdr;
+                    struct iphdr org_iphdr;
+                    char payload[];
+                } icmp_error;
+            };
+        };
+        char raw[1024];
+    } buffer;
+};
+
 struct pseudo_iphdr {
     uint32_t saddr;
     uint32_t daddr;
@@ -36,10 +62,15 @@ void calc_tcp_checksum(struct tcphdr *tcp, struct pseudo_iphdr *ph);
 void calc_ip_checksum(struct iphdr *hdr);
 void calc_udp_checksum(struct udphdr *hdr, size_t udp_len);
 
-void print_verbose_ip(struct iphdr *iphdr);
-void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size);
-void print_verbose_tcp(struct tcphdr *tcphdr);
+void print_verbose_ip(struct iphdr *iphdr, unsigned int padding);
+void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size,
+                        unsigned int padding);
+void print_verbose_tcp(struct tcphdr *tcphdr, unsigned int padding);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
+void print_packet_short(const char *buffer, const char *hdr);
+
+ssize_t rcv_packet_msg(int fd, struct packet *packet, struct iovec *iovec,
+                       int flags);
 
 #endif

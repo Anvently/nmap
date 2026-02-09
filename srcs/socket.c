@@ -102,6 +102,21 @@ int socket_open_tcp(t_options *opts, struct in_addr daddr,
         close(fd);
         return (-2);
     }
+    opt = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
     if (saddr) {
         if (getsockname(fd, (struct sockaddr *)&addr, &addr_len)) {
             close(fd);

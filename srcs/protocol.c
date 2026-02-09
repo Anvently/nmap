@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <error.h>
+#include <linux/errqueue.h>
 #include <netdb.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -8,6 +9,7 @@
 #include <netinet/udp.h>
 #include <nmap.h>
 #include <protocol.h>
+#include <sys/socket.h>
 
 void fill_pattern(const char *pattern, char *data, unsigned int len);
 
@@ -246,4 +248,114 @@ void calc_udp_sum_pkt(char *buffer, size_t total_len) {
 
     calc_udp_checksum(udphdr, total_len - sizeof(struct iphdr));
     calc_ip_checksum(iphdr);
+}
+
+/// @brief Read an incoming packet and its ancilliary data using
+/// ```recvmsg()```. The packet is timestamped with ```SO_TIMESTAMP``` control
+/// message, and ttl is filled with ```IP_TTL``` control message. If
+/// ```RECV_ERR``` control message is received, icmp error is reconstructed in
+/// ```packet->buffer.icmp_error```.
+/// @param fd
+/// @param pkt
+/// @param iovec vector of buffer to which incoming packet will be assigned.
+/// @note for icmp error, full icmp packet is only reconstructed in ```packet```
+/// structure, the given vector will only contain the beginning of the packet
+/// that caused the error.
+/// @param flags flags passed to ```recv_msg``` call
+/// @return ```-1``` if error or number of len of total reconstructed packet
+ssize_t rcv_packet_msg(int fd, struct packet *pkt, struct iovec *iovec,
+                       int flags) {
+    char ancilliary[512];
+    struct sock_extended_err *err;
+    struct msghdr mhdr = {
+        .msg_name = NULL,
+        .msg_namelen = 0,
+        .msg_iov = iovec, // will contain origin packet
+        .msg_iovlen = 1,
+        .msg_control = &ancilliary[0],
+        .msg_controllen = sizeof(ancilliary),
+        .msg_flags =
+            0}; // Expect : MSG_TRUNC (ctx buff too small), MSG_CTRUNC (extra
+                // too small), MSG_ERRQUEUE (something to read in ERR queue)
+    ssize_t ret;
+
+    ret = recvmsg(fd, &mhdr, flags);
+    if (ret <= 0)
+        return (ret);
+
+    if (mhdr.msg_flags & MSG_TRUNC || mhdr.msg_flags & MSG_CTRUNC) {
+        fprintf(stderr, "Error : buffer size too small: %s %s\n",
+                mhdr.msg_flags & MSG_TRUNC ? "MSG_TRUNC" : "",
+                mhdr.msg_flags & MSG_CTRUNC ? "MSG_CTRUNC" : "");
+        return (-1);
+    }
+
+    for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&mhdr); cmsg != NULL;
+         cmsg = CMSG_NXTHDR(&mhdr, cmsg)) {
+        switch (cmsg->cmsg_level) {
+        case SOL_SOCKET:
+            switch (cmsg->cmsg_type) {
+            case SCM_TIMESTAMP:
+                memcpy(&pkt->stamp, CMSG_DATA(cmsg), sizeof(struct timeval));
+                break;
+            default:
+                fprintf(
+                    stderr,
+                    "Error : received unknow control message of level = %d,  "
+                    "type = %d\n",
+                    cmsg->cmsg_level, cmsg->cmsg_type);
+                return (-1);
+            }
+            break;
+
+        case IPPROTO_IP:
+            switch (cmsg->cmsg_type) {
+            case IP_ORIGDSTADDR:
+                pkt->buffer.iphdr.daddr =
+                    ((struct sockaddr_in *)CMSG_DATA(cmsg))->sin_addr.s_addr;
+                break;
+            case IP_TTL:
+                pkt->buffer.iphdr.ttl = (uint8_t)(*(uint32_t *)CMSG_DATA(cmsg));
+                break;
+            case IP_RECVERR:
+                err = (struct sock_extended_err *)CMSG_DATA(cmsg);
+                if (err->ee_origin != SO_EE_ORIGIN_ICMP) {
+                    printf("Error : invalid err msg origin of %u \n",
+                           err->ee_origin);
+                    return (-1);
+                }
+                pkt->buffer.iphdr.protocol = IPPROTO_ICMP;
+                pkt->buffer.iphdr.saddr =
+                    ((struct sockaddr_in *)SO_EE_OFFENDER(err))
+                        ->sin_addr.s_addr;
+                pkt->buffer.iphdr.tot_len =
+                    htons(ret + sizeof(struct iphdr) + sizeof(struct icmphdr));
+                pkt->buffer.iphdr.check = 0;
+                pkt->buffer.iphdr.id = 0;
+                pkt->buffer.icmp_error.icmphdr =
+                    (struct icmphdr){.checksum = 0,
+                                     .type = err->ee_type,
+                                     .code = err->ee_code,
+                                     .un.gateway = htonl(err->ee_info)};
+                break;
+            default:
+                fprintf(
+                    stderr,
+                    "Error : received unknow control message of level = %d,  "
+                    "type = %d\n",
+                    cmsg->cmsg_level, cmsg->cmsg_type);
+                return (-1);
+            }
+
+            break;
+
+        default:
+            fprintf(stderr,
+                    "Error : received unknow control message of level = %d,  "
+                    "type = %d\n",
+                    cmsg->cmsg_level, cmsg->cmsg_type);
+            return (-1);
+        }
+    }
+    return ((ssize_t)pkt->buffer.iphdr.tot_len);
 }
