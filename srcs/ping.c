@@ -104,7 +104,6 @@ static int send_syn(struct task_handle *data) {
     if (ret < 0) {
         sys_error(data->error, "send", "sending tcp syn");
         data->flags.error = 1;
-        data->flags.cancelled = 1;
         return (1);
     } else if (ret == 0 || (size_t)ret != ctx->packet.len) {
         fprintf(stderr,
@@ -131,11 +130,10 @@ static int send_echo(struct task_handle *data) {
                  (uint16_t)(gettid() % UINT16_MAX), 0);
     calc_icmp_sum_pkt(ctx->packet.buffer.raw, ctx->packet.len);
 
-    ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
+    ret = send(data->sock_icmp.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
         sys_error(data->error, "send", "sending icmp echo");
         data->flags.error = 1;
-        data->flags.cancelled = 1;
         return (1);
     } else if (ret == 0 || (size_t)ret != ctx->packet.len) {
         fprintf(
@@ -168,7 +166,6 @@ static int rcv_packet(struct task_handle *data, struct pollfd poll) {
     if (ret < 0) {
         sys_error(data->error, "recv", "reading incoming packet");
         data->flags.error = 1;
-        data->flags.cancelled = 1;
         return (1);
     } else if (ret == 0) {
         error(1, errno, "unexpected read of 0");

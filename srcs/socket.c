@@ -9,6 +9,12 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+char *get_ip_name(struct sockaddr *addr, bool resolve);
+int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
+int socket_open_tcp(t_options *opts, struct in_addr daddr,
+                    struct in_addr *saddr);
+int socket_open_icmp(t_options *opts, struct in_addr daddr);
+
 char *get_ip_name(struct sockaddr *addr, bool resolve) {
     static char hostname[128] = {0};
     if (resolve == false) {

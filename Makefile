@@ -6,7 +6,7 @@ OBJS_FOLDER	=	.objs/
 
 SRCS_FILES	=	main.c  parse_args.c main_thread.c \
 				debug.c host.c result.c dns.c ping.c worker.c \
-				input.c socket.c protocol.c score.c
+				input.c socket.c protocol.c score.c tcp_scan.c
 
 OBJS		=	$(addprefix $(OBJS_FOLDER),$(SRCS_FILES:.c=.o))
 SRCS		=	$(addprefix $(SRCS_FOLDER),$(SRCS_FILES))
@@ -63,7 +63,7 @@ docker:
 	docker build -t debian_c . && docker run --cap-add=NET_RAW -it debian_c
 
 tcpdump:
-	docker run --rm --net container:$$(docker ps -q) --cap-add NET_RAW nicolaka/netshoot tcpdump -x -i eth0 icmp
+	docker run --rm --net container:$$(docker ps -q) -it --cap-add NET_RAW nicolaka/netshoot tcpdump -n -i eth0  'tcp || icmp '
 
 clean:
 	@echo "\n-------------CLEAN--------------\n"

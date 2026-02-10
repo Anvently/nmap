@@ -37,10 +37,9 @@ const char *scan_state_strings[] = {[SCAN_DISABLE] = "disabled",
                                     [SCAN_DONE] = "done"};
 
 const char *scan_type_strings[] = {
-    [SCAN_DNS] = "DNS",        [SCAN_PING] = "PING",    [SCAN_SYN] = "SYN",
-    [SCAN_ACK] = "ACK",        [SCAN_NULL] = "NULL",    [SCAN_FIN] = "FIN",
-    [SCAN_XMAS] = "XMAS",      [SCAN_CONNECT] = "CONN", [SCAN_UDP] = "UDP",
-    [SCAN_RAW_UDP] = "UDP_RAW"};
+    [SCAN_DNS] = "DNS",   [SCAN_PING] = "PING",    [SCAN_SYN] = "SYN",
+    [SCAN_ACK] = "ACK",   [SCAN_NULL] = "NULL",    [SCAN_FIN] = "FIN",
+    [SCAN_XMAS] = "XMAS", [SCAN_CONNECT] = "CONN", [SCAN_UDP] = "UDP"};
 
 const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
                                 [REASON_ICMP_REPLY] = "icmp reply",
@@ -173,13 +172,13 @@ void print_host(struct host *host) {
     printf("%s (%s - %s) : %s (%hhu)\n", host->hostname, addr_ipv4,
            host->hostname_rsvl == NULL ? "unkown" : host->hostname_rsvl,
            host_state_strings[host->state], host->state);
-    printf(
-        "Current scans : %c%c%c%c%c%c%c%c%c%c\n",
-        host->current_scan.dns ? 'D' : 0, host->current_scan.ping ? 'P' : 0,
-        host->current_scan.syn ? 'S' : 0, host->current_scan.ack ? 'A' : 0,
-        host->current_scan.null ? 'N' : 0, host->current_scan.fin ? 'F' : 0,
-        host->current_scan.xmas ? 'X' : 0, host->current_scan.connect ? 'C' : 0,
-        host->current_scan.udp ? 'U' : 0, host->current_scan.raw_udp ? 'U' : 0);
+    printf("Current scans : %c%c%c%c%c%c%c%c%c\n",
+           host->current_scan.dns ? 'D' : 0, host->current_scan.ping ? 'P' : 0,
+           host->current_scan.syn ? 'S' : 0, host->current_scan.ack ? 'A' : 0,
+           host->current_scan.null ? 'N' : 0, host->current_scan.fin ? 'F' : 0,
+           host->current_scan.xmas ? 'X' : 0,
+           host->current_scan.connect ? 'C' : 0,
+           host->current_scan.udp ? 'U' : 0);
     for (unsigned int i = 0; i < SCAN_NBR; i++) {
         print_scan_state(host->scans + i);
     }

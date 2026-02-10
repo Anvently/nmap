@@ -10,13 +10,16 @@
 #ifndef NMAP_H
 #define NMAP_H
 
-#define PING_TIMEOUT 3 // Default ping timeout
-#define MAX_WORKER 250 // Maximum number of threads
-// Maximum number of task a worker can take (only UDP scan is able to scan
-// multiple port of a same host)
+#define PING_TIMEOUT 3            // Default ping timeout
+#define PORT_TIMEOUT PING_TIMEOUT // Timeout for port scan
+#define MAX_WORKER 250            // Maximum number of threads
+// Maximum number of task a worker can take
 #define MAX_TASK_WORKER 16
+// Maximum number of port a single task is able to scan (or maximum number of
+// port a single socket may interact with)
+#define MAX_PORT_TASK 16
 #define MAX_PORT_NBR 1024U // Maximum different port nmap is allowed to scan
-#define MAX_RETRIES 1
+#define MAX_RETRIES 3
 
 // It's the task responspability (in send handler to override this default
 // timeout)
@@ -64,9 +67,6 @@ union scan_list {
         uint16_t xmas : 1;
         uint16_t connect : 1;
         uint16_t udp : 1;
-        uint16_t raw_udp
-            : 1; // if usurp option is enabled, we need raw socket the
-                 // IP_HDRINCL option enabled, then limitation is 1 host/socket
     };
     uint16_t int_representation;
 } __attribute__((__packed__));
@@ -144,7 +144,6 @@ enum scan_type {
     SCAN_CONNECT,
     SCAN_UDP,
     SCAN_NBR,
-    SCAN_RAW_UDP // Doesn't really count as a different scan from udp
 } __attribute__((__packed__));
 
 enum port_state {
@@ -155,7 +154,8 @@ enum port_state {
     PORT_FILTERED,
     PORT_UNFILTERED,
     PORT_OPEN_FILTERED,
-    PORT_CLOSED_FILTERED
+    PORT_CLOSED_FILTERED,
+    PORT_ERROR // Needed to mark non-pending scan ports
 } __attribute__((__packed__));
 
 enum result_reason {
@@ -225,12 +225,15 @@ struct dns_data {
 struct ping_data {
     struct in_addr daddr;     // peer address
     struct sockaddr_in saddr; // tcp
-    struct port_info *rslt;
+    struct port_info *rslt;   // SINGLE PORT
 };
 
-struct tcp_data {           // Used by SYN, ACK, NULL, XMAS, FIN
-    uint8_t flag;           // TCP flag to send ()
-    struct port_info *port; // result
+struct tcp_data {             // Used by SYN, ACK, NULL, XMAS, FIN
+    struct in_addr daddr;     // peer address
+    struct sockaddr_in saddr; // tcp
+    struct port_info
+        *ports; // Portion of port_info vector (this portion will be sorted)
+    uint16_t nbr_port; // Number of port scanned
 };
 
 struct connect_data {

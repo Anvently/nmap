@@ -319,10 +319,6 @@ static int register_file(t_options *opt, char *arg) {
 }
 
 int check_options(t_options *options) {
-    if (options->enabled_scan.udp && options->usurp.arg) {
-        options->enabled_scan.udp = 0;
-        options->enabled_scan.raw_udp = 1;
-    }
     options->enabled_scan.ping = options->skip_discovery ? 0 : 1;
 
     return (0);

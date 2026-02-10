@@ -296,7 +296,7 @@ void _ft_insertion_sort(void *range, size_t n, size_t el_size,
 int _ft_merge_sort(void *range, size_t len, size_t el_size,
                    int (*cmp)(void *a, void *b), bool rev);
 #define ft_merge_sort(range, n, cmp_func, rev)                                 \
-    (_ft_merge_sort(range, n, sizeof(*range), cmp_func, rev))
+    (_ft_merge_sort(range, n, sizeof(*(range)), cmp_func, rev))
 
 /*--------------------------------------------------------------
 ---------------------- GET_NEXT_LINE -----------------------------

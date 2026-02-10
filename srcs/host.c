@@ -124,18 +124,14 @@ static int add_host(struct host **hosts, const char *hostname,
     if (opts->list == false) {
         for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
 
-            host.scans[i] = (struct scan_result){
-                .remaining = 0,
-                .nbr_port = 0,
-                .state = SCAN_DISABLE,
-                .type = i == SCAN_UDP && opts->enabled_scan.raw_udp
-                            ? SCAN_RAW_UDP
-                            : i};
+            host.scans[i] = (struct scan_result){.remaining = 0,
+                                                 .nbr_port = 0,
+                                                 .state = SCAN_DISABLE,
+                                                 .type = i};
 
             // If scan is enabled
             if (((uint16_t)opts->enabled_scan.int_representation &
-                 ((uint16_t)1 << i)) != 0 ||
-                (i == SCAN_UDP && opts->enabled_scan.raw_udp)) {
+                 ((uint16_t)1 << i)) != 0) {
 
                 host.scans[i].state = SCAN_PENDING;
                 if (host.scans[i].type == SCAN_PING) {
