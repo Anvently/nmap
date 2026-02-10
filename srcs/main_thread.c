@@ -146,6 +146,7 @@ static void confirm_task(struct task_handle *task) {
         host->current_scan.ping = 1;
         host->scans[SCAN_PING].state = SCAN_RUNNING;
         task->io_data.ping.rslt->state = PORT_SCANNING;
+        host->scans[SCAN_PING].assigned_worker += 1;
         break;
     default:
         host->state = STATE_SCAN_RUNNING;
@@ -173,6 +174,7 @@ static bool assign_task(struct host *host, struct task_handle *task,
     // Only relevant to print debug message when task is started
     bool scan_started = false;
     bool skip_blocking = *nbr_socket > 0;
+    uint16_t available_port;
 
     task->opts = opts;
     switch (host->state) {
@@ -195,6 +197,8 @@ static bool assign_task(struct host *host, struct task_handle *task,
         break;
 
     case STATE_PING_PENDING:
+        available_port =
+            host->scans[SCAN_PING].nbr_port - host->scans[SCAN_PING].remaining;
         task->scan_type = SCAN_PING;
         task->init = ping_init;
         task->packet_send = ping_packet_send;
@@ -203,16 +207,16 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->release = ping_release;
         task->timeout = (struct timeval){.tv_sec = PING_TIMEOUT, .tv_usec = 0};
         task->io_data.ping.daddr = host->addr.sin_addr;
-        task->io_data.ping.rslt = &host->scans[SCAN_PING].ports[0];
-        task->error = &host->scans[SCAN_PING].error;
+        task->io_data.ping.rslt = &host->scans[SCAN_PING].ports[available_port];
+        task->error = &host->scans[SCAN_PING].ports[available_port].error;
         task->io_data.ping.saddr = (struct sockaddr_in){0};
-        *nbr_socket += 1; // Only TCP sock for now
+        *nbr_socket += 2;
         task->sock_eph.fd = -1;
         task->sock_icmp = (struct sock_instance){.fd = -1};
         task->sock_main = (struct sock_instance){.fd = -1};
         task->host = host;
         ret = true;
-        if (task->io_data.ping.rslt->retries == 0)
+        if (host->scans[SCAN_PING].remaining == host->scans[SCAN_PING].nbr_port)
             scan_started = true;
         break;
 
@@ -288,6 +292,7 @@ static bool check_hosts_done(struct host *vec_hosts) {
 
 static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     struct scan_result *scan;
+    uint16_t available_port;
 
     scan = &task.host->scans[task.scan_type];
     switch (scan->type) {
@@ -300,7 +305,8 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     case SCAN_PING:
         --scan->assigned_worker;
         task.host->current_scan.ping = 0;
-        if (++scan->ports[0].retries >= MAX_RETRIES) {
+        available_port = scan->nbr_port - scan->remaining;
+        if (++scan->ports[available_port].retries >= MAX_RETRIES) {
             scan->state = SCAN_DONE;
             scan->ports->reason.type = REASON_ERROR;
             task.host->state = STATE_ERROR;
@@ -323,6 +329,7 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
 static void handle_task_done(struct task_handle task, struct host *vec_hosts,
                              t_options *opts) {
     struct scan_result *scan;
+    uint16_t available_port;
     bool ret;
 
     // if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose > 1)
@@ -346,22 +353,15 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         break;
     case SCAN_PING:
         scan->assigned_worker--;
+        available_port = scan->nbr_port - scan->remaining;
         task.host->current_scan.ping = 0;
         if (*task.error && (*task.error)->type == NMAP_ERROR_WORKER) {
-            scan->ports[0].reason.type = REASON_ERROR;
+            scan->ports[available_port].reason.type = REASON_ERROR;
         }
         scan->remaining--;
-        switch (scan->ports[0].reason.type) {
+        switch (scan->ports[available_port].reason.type) {
         case REASON_NO_RESPONSE:
-            if (++scan->ports[0].retries >= MAX_RETRIES) {
-                scan->state = SCAN_DONE;
-                scan->ports->reason.type = REASON_NO_RESPONSE;
-                task.host->state = STATE_PING_TIMEOUT;
-                scan->state = SCAN_DONE;
-                break;
-            }
-            task.host->state = STATE_PING_PENDING;
-            scan->state = SCAN_PENDING;
+            task.host->state = STATE_PING_TIMEOUT;
             break;
 
         case REASON_ICMP_REPLY:
@@ -369,22 +369,24 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         case REASON_SYN_ACK:
         case REASON_USER_INPUT:
             task.host->state = STATE_UP;
-            scan->state = SCAN_DONE;
             break;
 
         case REASON_HOST_UNREACH:
         case REASON_PORT_UNREACH:
         case REASON_TIME_EXCEEDED:
             task.host->state = STATE_DOWN;
-            scan->state = SCAN_DONE;
             break;
 
         case REASON_ERROR:
         default: // UNEXPECTED REASON
             task.host->state = STATE_ERROR;
-            scan->state = SCAN_DONE;
             break;
         }
+        if (task.host->state != STATE_UP && scan->remaining > 0) {
+            task.host->state = STATE_PING_PENDING;
+            scan->state = SCAN_PENDING;
+        } else
+            scan->state = SCAN_DONE;
         break;
     default:
         break;
@@ -486,20 +488,13 @@ init_worker(struct host *hosts_vec,
     do {
         task = (struct task_handle){0};
         ret = assign_task(host, &task, &worker->nbr_sock, opts);
-        if (ret == false) { // This host has no more task
-            host = find_available_host(hosts_vec, true);
-            if (host)
-                ret = true;
-            else
-                break; // If no task anymore
-            continue;
-        }
+        host = find_available_host(hosts_vec, true);
         if (task.scan_type == SCAN_DNS || task.scan_type == SCAN_CONNECT) {
             ret = false; // blocking task be executed by a dedicated worker
         }
         // Adds task to worker
         ft_vector_push((t_vector **)&worker->tasks_vec, &task);
-    } while (ret == true &&
+    } while (ret == true && host &&
              ft_vector_size(worker->tasks_vec) < MAX_TASK_WORKER);
     if (ft_vector_resize((t_vector **)&worker->tasks_vec,
                          ft_vector_size(worker->tasks_vec))) {

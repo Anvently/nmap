@@ -126,3 +126,65 @@ int socket_open_tcp(t_options *opts, struct in_addr daddr,
     }
     return (fd);
 }
+
+/// @brief Open RAW ICMP socket, binded to local address and connected to remote
+/// address. Also set sock options
+/// @param opts
+/// @param daddr destination address uf for the connect() call
+/// @return ```-1``` if socket() error, else ```-2``` if other error
+int socket_open_icmp(t_options *opts, struct in_addr daddr) {
+    const char *interface = opts->interface;
+    struct sockaddr_in addr = {.sin_addr = {.s_addr = INADDR_ANY},
+                               .sin_family = AF_INET,
+                               .sin_port = 0};
+    int fd;
+    int opt;
+
+    fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (fd < 0)
+        return (-1);
+    if (interface) {
+        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface,
+                       strlen(interface))) {
+            close(fd);
+            return (-2);
+        }
+    }
+    if (bind(fd, (const struct sockaddr *)&addr,
+             (socklen_t)sizeof(struct sockaddr_in))) {
+        close(fd);
+        return (-2);
+    }
+    addr.sin_addr = daddr;
+    if (connect(fd, (const struct sockaddr *)&addr,
+                (socklen_t)sizeof(struct sockaddr_in))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_HDRINCL, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_RECVTTL, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    opt = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &opt, sizeof(opt))) {
+        close(fd);
+        return (-2);
+    }
+    return (fd);
+}

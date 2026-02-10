@@ -35,6 +35,7 @@ struct ping_context {
 int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
 int socket_open_tcp(t_options *opts, struct in_addr daddr,
                     struct in_addr *saddr);
+int socket_open_icmp(t_options *opts, struct in_addr daddr);
 
 static void sys_error(struct nmap_error **error_ptr, const char *func_fail,
                       const char *detail) {
@@ -263,10 +264,10 @@ int ping_init(struct task_handle *data) {
         switch (data->sock_eph.fd) {
         default:
             break;
-        case -2:
+        case -1:
             data->flags.cancelled = 1;
             /* FALLTHRU */
-        case -1:
+        case -2:
             sys_error(data->error, "opening eph socket", "");
             data->io_data.ping.rslt->reason.type = REASON_ERROR;
             data->flags.error = 1;
@@ -275,17 +276,34 @@ int ping_init(struct task_handle *data) {
             return (1);
         }
     }
+    data->sock_icmp.fd = socket_open_icmp(data->opts, data->io_data.ping.daddr);
+    switch (data->sock_icmp.fd) {
+    default:
+        break;
+    case -1:
+    case -2:
+        if (data->sock_eph.fd >= 0)
+            close(data->sock_eph.fd);
+        sys_error(data->error, "opening icmp socket",
+                  inet_ntoa(data->io_data.ping.daddr));
+        data->io_data.ping.rslt->reason.type = REASON_ERROR;
+        data->flags.error = 1;
+        free(data->ctx);
+        return (1);
+    }
     data->sock_main.fd = socket_open_tcp(data->opts, data->io_data.ping.daddr,
                                          &data->io_data.ping.saddr.sin_addr);
     switch (data->sock_main.fd) {
     default:
         break;
-    case -2:
+    case -1:
         data->flags.cancelled = 1;
         /* FALLTHRU */
-    case -1:
+    case -2:
         if (data->sock_eph.fd >= 0)
             close(data->sock_eph.fd);
+        if (data->sock_icmp.fd >= 0)
+            close(data->sock_icmp.fd);
         sys_error(data->error, "opening tcp socket",
                   inet_ntoa(data->io_data.ping.daddr));
         data->io_data.ping.rslt->reason.type = REASON_ERROR;
@@ -416,7 +434,8 @@ int ping_packet_rcv(struct task_handle *data, struct pollfd poll) {
 int ping_packet_timeout(struct task_handle *data) {
     (void)data;
     data->io_data.ping.rslt->reason.type = REASON_NO_RESPONSE;
-    data->io_data.ping.rslt->reason.ttl = 1; // ttl is time out
+    data->io_data.ping.rslt->reason.ttl = 0; // ttl is time out
+    data->io_data.ping.rslt->reason.rtt = 0.f;
     return (1);
 }
 

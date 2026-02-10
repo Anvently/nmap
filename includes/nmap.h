@@ -173,16 +173,16 @@ enum result_reason {
 } __attribute__((__packed__));
 
 struct port_info {
-    uint16_t port;                 // 1-65535
-    _Atomic enum port_state state; // !!! Atomic operation only !!!
+    struct nmap_error *error; // Error related to a single port
     struct {
         uint8_t ttl;
         enum result_reason type;
         float rtt;
     } reason;
-    struct nmap_error *error; // Error related to a single port
-    uint8_t retries;          // Number of time the task is retried
-} __attribute__((__packed__));
+    uint16_t port;                 // 1-65535
+    _Atomic enum port_state state; // !!! Atomic operation only !!!
+    uint8_t retries;               // Number of time the task is retried
+};
 
 struct scan_result {
     enum scan_type type;

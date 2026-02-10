@@ -85,6 +85,11 @@ struct host *check_double_host(struct host *vec_hosts, struct host *host) {
     return (NULL);
 }
 
+struct static_vec {
+    t_vector_header hdr;
+    uint16_t ports[5];
+};
+
 /// @brief Generate a pre-filled host structure (with ports structure allocated)
 /// and push it to vector
 /// @param hosts
@@ -97,6 +102,9 @@ static int add_host(struct host **hosts, const char *hostname,
     struct host host = {.hostname = hostname};
     struct host *doubloon_match;
     unsigned int nbr_port = ft_vector_size(vec_ports);
+    struct static_vec ping_ports = {
+        .hdr = {.capacity = 5, .len = 5, .type_size = sizeof(uint16_t)},
+        .ports = {80, 443, 21, 22, 25}};
 
     // Need to check for doubloons
     doubloon_match = check_double_host(*hosts, &host);
@@ -112,23 +120,9 @@ static int add_host(struct host **hosts, const char *hostname,
     host.scans[SCAN_DNS] = (struct scan_result){
         .remaining = 0, .type = SCAN_DNS, .state = SCAN_PENDING, .ports = NULL};
 
-    // Ping scan
-    host.scans[SCAN_PING] = (struct scan_result){
-        .remaining = opts->skip_discovery ? 0 : 1,
-        .nbr_port = opts->skip_discovery ? 0 : 1,
-        .type = SCAN_PING,
-        .state = opts->skip_discovery ? SCAN_DONE : SCAN_PENDING};
-    host.scans[SCAN_PING].ports = calloc(1, sizeof(struct port_info));
-    if (host.scans[SCAN_PING].ports == NULL)
-        error(-1, errno, "allocating port_info structure for ping scan");
-    host.scans[SCAN_PING].ports->port = 80;
-    if (opts->skip_discovery) {
-        host.scans[SCAN_PING].ports->reason.type = REASON_USER_INPUT;
-    }
-
     // Port scans
     if (opts->list == false) {
-        for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
+        for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
 
             host.scans[i] = (struct scan_result){
                 .remaining = 0,
@@ -144,15 +138,20 @@ static int add_host(struct host **hosts, const char *hostname,
                 (i == SCAN_UDP && opts->enabled_scan.raw_udp)) {
 
                 host.scans[i].state = SCAN_PENDING;
-                host.scans[i].nbr_port = nbr_port;
-                host.scans[i].remaining = nbr_port;
-
-                host.scans[i].ports =
-                    allocate_ports(vec_ports, opts->sequential);
+                if (host.scans[i].type == SCAN_PING) {
+                    host.scans[i].nbr_port = 5;
+                    host.scans[i].ports =
+                        allocate_ports(ping_ports.ports, true);
+                } else {
+                    host.scans[i].nbr_port = nbr_port;
+                    host.scans[i].ports =
+                        allocate_ports(vec_ports, opts->sequential);
+                }
                 if (host.scans[i].ports == NULL)
                     error(-1, errno,
                           "allocating port_info structure for scan %hhu", i);
             }
+            host.scans[i].remaining = host.scans[i].nbr_port;
         }
     }
 

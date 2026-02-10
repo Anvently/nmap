@@ -84,6 +84,14 @@ void print_scan_result(struct scan_result *result, struct host *host,
         if (result->error) {
             printf(", ");
             print_nmap_error(result->error);
+        } else {
+            for (unsigned int i = result->nbr_port - 1; i; i--) {
+                if (result->ports[i].error) {
+                    printf(", ");
+                    print_nmap_error(result->ports[i].error);
+                    break;
+                }
+            }
         }
         if (result->ports->reason.ttl != 0 || result->ports->reason.rtt != 0.f)
             printf(" (ttl = %hhu, rtt = %.2f ms)", result->ports->reason.ttl,

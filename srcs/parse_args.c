@@ -323,6 +323,7 @@ int check_options(t_options *options) {
         options->enabled_scan.udp = 0;
         options->enabled_scan.raw_udp = 1;
     }
+    options->enabled_scan.ping = options->skip_discovery ? 0 : 1;
 
     return (0);
 }
