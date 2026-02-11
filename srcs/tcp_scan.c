@@ -32,6 +32,7 @@ struct tcp_context {
     } state;            // shared by all port (probes are sent together)
     size_t pattern_idx; // Idx where pattern start (or headers end)
     struct packet packet;
+    uint16_t waiting; // Count how many port are waiting for a response
 };
 
 static void sys_error(struct nmap_error **error_ptr, const char *func_fail,
@@ -41,11 +42,41 @@ static void sys_error(struct nmap_error **error_ptr, const char *func_fail,
     if (error == NULL)
         return;
     error->type = NMAP_ERROR_SYS;
-    ft_strlcpy(error->u.dns.func_fail, func_fail,
+    ft_strlcpy(error->u.sys.func_fail, func_fail,
                sizeof(error->u.dns.func_fail));
-    ft_strlcpy(error->u.dns.description, detail,
+    ft_strlcpy(error->u.sys.description, detail,
                sizeof(error->u.dns.description));
     error->error = errno;
+}
+
+static void icmp_error(struct nmap_error **error_ptr, struct packet *packet) {
+    struct nmap_error *error;
+    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
+    if (error == NULL)
+        return;
+    error->type = NMAP_ERROR_ICMP;
+    error->error = 0;
+    error->u.icmp.iphdr = packet->buffer.iphdr;
+    error->u.icmp.icmphdr = packet->buffer.icmp.icmphdr;
+    if (packet->len >= 2 * sizeof(struct iphdr) + sizeof(struct icmphdr))
+        error->u.icmp.org_iphdr = *(struct iphdr *)&packet->buffer.icmp.payload;
+    if (packet->len >= 2 * sizeof(struct iphdr) + sizeof(struct icmphdr) + 8)
+        memcpy(&error->u.icmp.detail,
+               packet->buffer.icmp.payload + sizeof(struct iphdr), 8);
+}
+
+static void packet_error(struct nmap_error **error_ptr, const char *context,
+                         struct packet *packet) {
+    struct nmap_error *error;
+    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
+    if (error == NULL)
+        return;
+    error->type = NMAP_ERROR_INVALID_PACKET;
+    ft_strlcpy(error->u.packet.context, context,
+               sizeof(error->u.packet.context));
+    memcpy(&error->u.packet.iphdr, packet->buffer.raw,
+           sizeof(error->u) - sizeof(error->u.packet.context));
+    error->error = 0;
 }
 
 int tcp_packet_send(struct task_handle *data);
@@ -57,6 +88,8 @@ int tcp_release(struct task_handle *data);
 int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
 int socket_open_tcp(t_options *opts, struct in_addr daddr,
                     struct in_addr *saddr);
+
+static void resolve_state(enum scan_type scan_type, struct port_info *port);
 
 int tcp_init(struct task_handle *data) {
     data->ctx = calloc(1, sizeof(struct tcp_context));
@@ -122,20 +155,20 @@ int tcp_init(struct task_handle *data) {
 
 int tcp_packet_timeout(struct task_handle *data) {
     struct port_info *port_info;
-    const enum port_state state =
-        (data->scan_type == SCAN_NULL || data->scan_type == SCAN_XMAS ||
-         data->scan_type == SCAN_FIN)
-            ? PORT_OPEN_FILTERED
-            : PORT_FILTERED;
+    // const enum port_state state =
+    //     (data->scan_type == SCAN_NULL || data->scan_type == SCAN_XMAS ||
+    //      data->scan_type == SCAN_FIN)
+    //         ? PORT_OPEN_FILTERED
+    //         : PORT_FILTERED;
     for (uint16_t i = 0; i < data->io_data.tcp.nbr_port; i++) {
         port_info = &data->io_data.tcp.ports[i];
         if (port_info->state != PORT_SCANNING) {
             continue;
         }
-        port_info->state = state;
         data->io_data.ping.rslt->reason.type = REASON_NO_RESPONSE;
         data->io_data.ping.rslt->reason.ttl = 0; // ttl is time out
         data->io_data.ping.rslt->reason.rtt = 0.f;
+        resolve_state(data->scan_type, port_info);
     }
     return (1);
 }
@@ -148,6 +181,86 @@ int tcp_release(struct task_handle *data) {
     if (data->ctx)
         free(data->ctx);
     return (0);
+}
+
+static void resolve_state(enum scan_type scan_type, struct port_info *port) {
+    switch (scan_type) {
+    case SCAN_SYN:
+        switch (port->reason.type) {
+        case REASON_SYN_ACK:
+            port->state = PORT_OPENED;
+            break;
+
+        case REASON_RST:
+            port->state = PORT_CLOSED;
+            break;
+
+        // TIME_EXCEEDED MAY ALSO COUNT AS FILTERED
+        case REASON_NO_RESPONSE:
+        case REASON_PORT_UNREACH:
+        case REASON_HOST_UNREACH:
+        case REASON_UNREACH:
+            port->state = PORT_FILTERED;
+            break;
+
+        case REASON_ERROR:
+        default:
+            port->state = PORT_ERROR;
+            break;
+        }
+        break;
+
+    case SCAN_ACK:
+        switch (port->reason.type) {
+
+        case REASON_RST:
+            port->state = PORT_UNFILTERED;
+            break;
+
+        // TIME_EXCEEDED MAY ALSO COUNT AS FILTERED
+        case REASON_NO_RESPONSE:
+        case REASON_PORT_UNREACH:
+        case REASON_HOST_UNREACH:
+        case REASON_UNREACH:
+            port->state = PORT_FILTERED;
+            break;
+
+        case REASON_ERROR:
+        default:
+            port->state = PORT_ERROR;
+            break;
+        }
+        break;
+
+    case SCAN_NULL:
+    case SCAN_FIN:
+    case SCAN_XMAS:
+        switch (port->reason.type) {
+        case REASON_RST:
+            port->state = PORT_CLOSED;
+            break;
+
+        case REASON_NO_RESPONSE:
+            port->state = PORT_OPEN_FILTERED;
+            break;
+
+        // TIME_EXCEEDED MAY ALSO COUNT AS FILTERED
+        case REASON_PORT_UNREACH:
+        case REASON_HOST_UNREACH:
+        case REASON_UNREACH:
+            port->state = PORT_FILTERED;
+            break;
+
+        case REASON_ERROR:
+        default:
+            port->state = PORT_ERROR;
+            break;
+        }
+        break;
+
+    default:
+        break;
+    }
 }
 
 static uint8_t get_tcp_flags(enum scan_type type) {
@@ -206,7 +319,6 @@ static int send_pkt_to_port(struct task_handle *data, struct port_info *port) {
 
 int tcp_packet_send(struct task_handle *data) {
     struct tcp_context *ctx = (struct tcp_context *)data->ctx;
-    int nsend = 0;
     struct port_info *port;
 
     switch (ctx->state) {
@@ -214,12 +326,12 @@ int tcp_packet_send(struct task_handle *data) {
         for (uint16_t i = 0; i < data->io_data.tcp.nbr_port; i++) {
             port = &data->io_data.tcp.ports[i];
             if (send_pkt_to_port(data, port) == 0) {
-                nsend++;
+                ctx->waiting++;
                 if (data->opts->trace_packet)
                     print_packet_short(ctx->packet.buffer.raw, "SND");
             }
         }
-        if (nsend == 0) { // No packet was sent, error
+        if (ctx->waiting == 0) { // No packet was sent, error
             data->flags.error = 1;
             return (1);
         }
@@ -269,8 +381,99 @@ static int rcv_packet(struct task_handle *data, struct pollfd poll) {
     return (0);
 }
 
+static struct port_info *
+find_port(uint16_t nbr_port, struct port_info ports[nbr_port], uint16_t port) {
+    for (uint16_t i = 0; i < nbr_port; i++) {
+        if (ports[i].port == port)
+            return (&ports[i]);
+        if (ports[i].port > port) // port are sorted
+            return (NULL);
+    }
+    return (NULL);
+}
+
+static struct port_info *demul_packet(struct task_handle *data) {
+    struct tcp_context *ctx = (struct tcp_context *)data->ctx;
+    struct port_info *port;
+
+    switch (ctx->packet.buffer.iphdr.protocol) {
+    case IPPROTO_TCP:
+        port = find_port(data->io_data.tcp.nbr_port, data->io_data.tcp.ports,
+                         ntohs(ctx->packet.buffer.tcp.tcphdr.th_sport));
+        break;
+
+    case IPPROTO_ICMP:
+        port = find_port(
+            data->io_data.tcp.nbr_port, data->io_data.tcp.ports,
+            ntohs(((struct tcphdr *)ctx->packet.buffer.icmp_error.payload)
+                      ->th_dport));
+        break;
+
+    default:
+        packet_error(data->error, "invalid protocol", &ctx->packet);
+        data->flags.error = 1;
+        return (NULL);
+    }
+    if (port == NULL) {
+        packet_error(data->error, "no port match", &ctx->packet);
+        data->flags.error = 1;
+    }
+    return (port);
+}
+
+/// @brief
+/// @param data
+/// @param port
+static void handle_rcv_packet(struct task_handle *data,
+                              struct port_info *port) {
+    struct tcp_context *ctx = (struct tcp_context *)data->ctx;
+
+    port->reason.ttl = ctx->packet.buffer.iphdr.ttl;
+    switch (ctx->packet.buffer.iphdr.protocol) {
+    case IPPROTO_TCP:
+        if (ctx->packet.buffer.tcp.tcphdr.th_flags & TH_SYN)
+            port->reason.type = REASON_SYN_ACK;
+        else if (ctx->packet.buffer.tcp.tcphdr.th_flags & TH_RST)
+            port->reason.type = REASON_RST;
+        else {
+            packet_error(&port->error, "unexpected flags", &ctx->packet);
+            port->reason.type = REASON_ERROR;
+        }
+        break;
+
+    case IPPROTO_ICMP:
+        switch (ctx->packet.buffer.icmp_error.icmphdr.type) {
+        // case ICMP_ECHO
+        case ICMP_UNREACH:
+            if (ctx->packet.buffer.icmp_error.icmphdr.code == ICMP_UNREACH_PORT)
+                port->reason.type = REASON_PORT_UNREACH;
+            else if (ctx->packet.buffer.icmp_error.icmphdr.code ==
+                     ICMP_UNREACH_HOST)
+                port->reason.type = REASON_HOST_UNREACH;
+            else
+                port->reason.type = REASON_UNREACH;
+            break;
+
+        case ICMP_TIME_EXCEEDED:
+            port->reason.type = REASON_TIME_EXCEEDED;
+            break;
+
+        default:
+            icmp_error(&port->error, &ctx->packet);
+            port->reason.type = REASON_ERROR;
+            break;
+        }
+        break;
+
+    default:
+        break;
+    }
+    resolve_state(data->scan_type, port);
+}
+
 int tcp_packet_rcv(struct task_handle *data, struct pollfd poll) {
     struct tcp_context *ctx = (struct tcp_context *)data->ctx;
+    struct port_info *port;
 
     if (rcv_packet(data, poll)) {
         return (1);
@@ -284,8 +487,12 @@ int tcp_packet_rcv(struct task_handle *data, struct pollfd poll) {
             print_verbose_packet(ctx->packet.buffer.raw, ctx->packet.len);
             break;
         case TCPSTATE_SENT: // Handle packet
-            // if (handle_packet_rcv(data))
-            //     return (1);
+            port = demul_packet(data);
+            if (port == NULL)
+                return (1);
+            handle_rcv_packet(data, port);
+            if (--ctx->waiting == 0) // all port scanned
+                return (1);
             break;
         default:
             error(1, errno, "invalid tcp state");

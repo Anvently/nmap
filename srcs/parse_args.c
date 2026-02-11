@@ -24,6 +24,7 @@ static int register_threads(t_options *opt, char *);
 static int register_scan(t_options *opt, char *);
 static int register_file(t_options *opt, char *);
 static int register_trace_packet(t_options *opt, char *);
+static int register_no_service(t_options *opt, char *);
 
 int NBR_OPTIONS = OPT_NBR;
 t_opt_flag options_list[OPT_NBR] = {
@@ -111,6 +112,10 @@ t_opt_flag options_list[OPT_NBR] = {
                                       .handler = &register_trace_packet,
                                       .short_id = 0,
                                       .long_id = "trace-packet"},
+    [OPT_NO_SERVICE] = (t_opt_flag){.arg = ARG_NONE,
+                                    .handler = &register_no_service,
+                                    .short_id = 'N',
+                                    .long_id = "no-service"},
 };
 
 t_opt_flag *options_map = &options_list[0];
@@ -328,5 +333,12 @@ static int register_trace_packet(t_options *opt, char *arg) {
     (void)arg;
     (void)opt;
     opt->trace_packet = true;
+    return (0);
+}
+
+static int register_no_service(t_options *opt, char *arg) {
+    (void)arg;
+    (void)opt;
+    opt->no_service = true;
     return (0);
 }

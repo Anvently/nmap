@@ -47,11 +47,22 @@ const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
                                 [REASON_RST] = "reset",
                                 [REASON_PORT_UNREACH] = "port unreachable",
                                 [REASON_HOST_UNREACH] = "host unreachable",
+                                [REASON_UNREACH] = "destination unreachable",
                                 [REASON_CONN_REFUSED] = "connection refused",
                                 [REASON_USER_INPUT] = "user input",
                                 [REASON_NO_RESPONSE] = "no response",
                                 [REASON_TIME_EXCEEDED] = "time exceeded",
                                 [REASON_ERROR] = "error"};
+
+const char *port_state_strings[] = {[PORT_UNKNOWN] = "unknown",
+                                    [PORT_SCANNING] = "scanning",
+                                    [PORT_OPENED] = "opened",
+                                    [PORT_CLOSED] = "closed",
+                                    [PORT_FILTERED] = "filtered",
+                                    [PORT_UNFILTERED] = "unfiltered",
+                                    [PORT_OPEN_FILTERED] = "opened|filtered",
+                                    [PORT_CLOSED_FILTERED] = "closed|filtered",
+                                    [PORT_ERROR] = "error"};
 
 static const char *icmp_type_strings[] = {
     [ICMP_ECHOREPLY] = "ECHO REPLY",
@@ -87,6 +98,7 @@ void print_nmap_error(struct nmap_error *error);
 static void print_dns_error(struct nmap_error *error);
 static void print_sys_error(struct nmap_error *error);
 static void print_icmp_error(struct nmap_error *error);
+static void print_invalid_packet_error(struct nmap_error *error);
 
 void print_verbose_packet(const char *buffer, size_t len) {
     _print_verbose_packet_pad(buffer, len, 0);
@@ -105,6 +117,9 @@ void print_nmap_error(struct nmap_error *error) {
         break;
     case NMAP_ERROR_WORKER:
         print_sys_error(error);
+        break;
+    case NMAP_ERROR_INVALID_PACKET:
+        print_invalid_packet_error(error);
         break;
     default:
         break;
@@ -378,4 +393,8 @@ static void print_icmp_error(struct nmap_error *error) {
            icmp_type_strings[error->u.icmp.icmphdr.type],
            error->u.icmp.icmphdr.type,
            inet_ntoa((struct in_addr){.s_addr = error->u.icmp.iphdr.saddr}));
+}
+static void print_invalid_packet_error(struct nmap_error *error) {
+    printf("%s ⁼> ", error->u.packet.context);
+    print_packet_short((const char *)&error->u.packet.iphdr, "");
 }

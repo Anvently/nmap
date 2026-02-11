@@ -7,6 +7,8 @@
 struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts);
 void hosts_free(struct host **hosts);
 
+void free_services_vec(struct service *vec_services);
+
 void print_host_result(struct host *host, t_options *opts);
 void print_scan_result(struct scan_result *result, struct host *host,
                        t_options *opts);
@@ -74,35 +76,38 @@ static struct host *find_available_host(struct host *vec_hosts,
                                         bool skip_blocking) {
 
     const size_t vec_size = ft_vector_size(vec_hosts);
+    struct host *host;
     // struct scan_result *udp_scan;
 
     for (unsigned int i = 0; i < vec_size; i++) {
-        switch (vec_hosts[i].state) {
+        host = &vec_hosts[i];
+        switch (host->state) {
         case STATE_PENDING_RESOLVE:
             if (skip_blocking)
                 continue;
-            return (&vec_hosts[i]);
+            return (host);
         case STATE_PING_PENDING:
-            return (&vec_hosts[i]);
+            return (host);
 
         case STATE_SCAN_PENDING:
-            return (&vec_hosts[i]);
+            return (host);
+
+        case STATE_SCAN_RUNNING: // An host may perform simultaneous UDP and TCP
+                                 // scan
+            if (host->current_scan.udp == 0 &&
+                host->scans[SCAN_UDP].state == SCAN_PENDING)
+                return (host);
+            if ((host->current_scan.int_representation & SCAN_LIST_TCP_MASK) ==
+                    0 &&
+                (host->scans[SCAN_SYN].state == SCAN_PENDING ||
+                 host->scans[SCAN_ACK].state == SCAN_PENDING ||
+                 host->scans[SCAN_NULL].state == SCAN_PENDING ||
+                 host->scans[SCAN_FIN].state == SCAN_PENDING ||
+                 host->scans[SCAN_XMAS].state == SCAN_PENDING))
+                return (host);
 
         default: // For now DNS and ping only
             continue;
-
-            // case STATE_SCAN_RUNNING:
-            //     // If UDP disabled
-            //     udp_scan = &vec_hosts[i].scans[SCAN_UDP];
-            //     if (udp_scan->state == SCAN_DISABLE || udp_scan->state ==
-            //     SCAN_DONE)
-            //         continue;
-            //     if (udp_scan->remaining > 0)
-            //         return &vec_hosts[i];
-            //     break;
-
-            // default:
-            //     continue;
         }
     }
     return (NULL);
@@ -203,6 +208,49 @@ static void confirm_task(struct task_handle *task) {
     }
 }
 
+/// @brief Host must be assign to task before calling this function
+/// @param scan
+/// @param task
+/// @param nbr_socket
+/// @param opts
+static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
+                             unsigned int *nbr_socket, t_options *opts) {
+    (void)opts;
+
+    task->scan_type = scan->type;
+    task->error = &scan->error;
+    switch (task->scan_type) {
+    case SCAN_SYN:
+    case SCAN_ACK:
+    case SCAN_NULL:
+    case SCAN_FIN:
+    case SCAN_XMAS:
+        task->io_data.tcp.ports =
+            assign_multiple_port(&task->io_data.tcp.nbr_port, scan);
+        task->init = tcp_init;
+        task->packet_send = tcp_packet_send;
+        task->packet_rcv = tcp_packet_rcv;
+        task->packet_timeout = tcp_packet_timeout;
+        task->release = tcp_release;
+        task->timeout = (struct timeval){.tv_sec = PORT_TIMEOUT, .tv_usec = 0};
+        task->io_data.tcp.daddr = task->host->addr.sin_addr;
+        task->io_data.ping.saddr = (struct sockaddr_in){0};
+        *nbr_socket += 1;
+        task->sock_eph.fd = -1;
+        task->sock_icmp = (struct sock_instance){.fd = -1};
+        task->sock_main = (struct sock_instance){.fd = -1};
+        break;
+
+    case SCAN_CONNECT:
+        break;
+
+    case SCAN_UDP:
+        break;
+    default:
+        break;
+    }
+}
+
 /// @brief Fill ```task``` with an available task in ```host``` and update
 /// ```host``` status
 /// @param host
@@ -264,58 +312,29 @@ static bool assign_task(struct host *host, struct task_handle *task,
             scan_started = true;
         break;
 
+    case STATE_SCAN_RUNNING:
     case STATE_SCAN_PENDING:
         for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
-            if (host->scans[i].state != SCAN_PENDING)
+            scan = &host->scans[i];
+            if (scan->state != SCAN_PENDING)
+                continue;
+            if (scan->type == SCAN_CONNECT &&
+                host->current_scan.int_representation != 0)
                 continue;
             ret = true;
-            scan = &host->scans[i];
             if (scan->remaining == scan->nbr_port)
                 scan_started = true;
-            task->scan_type = scan->type;
-            task->error = &scan->error;
             task->host = host;
+            assign_task_scan(scan, task, nbr_socket, opts);
             break;
         }
         if (ret == false) // Unlikely
             error(1, errno,
                   "fatal: an host is in scan_pending state but does not have "
                   "any scan pending");
-        switch (task->scan_type) {
-        case SCAN_SYN:
-        case SCAN_ACK:
-        case SCAN_NULL:
-        case SCAN_FIN:
-        case SCAN_XMAS:
-            task->io_data.tcp.ports =
-                assign_multiple_port(&task->io_data.tcp.nbr_port, scan);
-            task->init = tcp_init;
-            task->packet_send = tcp_packet_send;
-            task->packet_rcv = tcp_packet_rcv;
-            task->packet_timeout = tcp_packet_timeout;
-            task->release = tcp_release;
-            task->timeout =
-                (struct timeval){.tv_sec = PORT_TIMEOUT, .tv_usec = 0};
-            task->io_data.tcp.daddr = host->addr.sin_addr;
-            task->io_data.ping.saddr = (struct sockaddr_in){0};
-            *nbr_socket += 1;
-            task->sock_eph.fd = -1;
-            task->sock_icmp = (struct sock_instance){.fd = -1};
-            task->sock_main = (struct sock_instance){.fd = -1};
-            break;
-
-        case SCAN_CONNECT:
-            break;
-
-        case SCAN_UDP:
-            break;
-        default:
-            break;
-        }
-
         break;
 
-    default: // For now DNS and PING only
+    default:
         return (false);
     }
     if (skip_blocking &&
@@ -696,5 +715,6 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
             print_host_result(&vec_hosts[i], opts);
     }
     hosts_free(&vec_hosts);
+    free_services_vec(opts->services_vec);
     return (ret);
 }

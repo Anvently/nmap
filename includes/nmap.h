@@ -45,6 +45,7 @@ enum OPTIONS {
     OPT_LIST,           // -L, --list
     OPT_SKIP_DISCOVERY, // --skip-ping
     OPT_SRC_PORT,       // -g, --source-port
+    OPT_NO_SERVICE,
     OPT_TRACE_PACKET,
     OPT_OPEN, // --open
     OPT_ALL,  // --all
@@ -55,6 +56,8 @@ enum OPTIONS {
     OPT_FILE,    // --file
     OPT_NBR,     //
 };
+
+#define SCAN_LIST_TCP_MASK ((uint16_t)0b001111110)
 
 union scan_list {
     struct {
@@ -70,6 +73,17 @@ union scan_list {
     };
     uint16_t int_representation;
 } __attribute__((__packed__));
+
+struct service {
+    char *name;
+    uint16_t port;
+    enum service_type {
+        SERVICE_NONE,
+        SERVICE_TCP,
+        SERVICE_UDP,
+        SERVICE_BOTH
+    } type;
+};
 
 /// @brief ```t_options``` typedef is already defined as an alias for this
 /// struct in libft
@@ -99,6 +113,8 @@ struct s_options {
     union scan_list enabled_scan; // 1 scan = 1 bit
     const char *file;
     bool trace_packet;
+    bool no_service;
+    struct service *services_vec;
 };
 
 enum host_state {
@@ -165,6 +181,7 @@ enum result_reason {
     REASON_RST,
     REASON_PORT_UNREACH,
     REASON_HOST_UNREACH,
+    REASON_UNREACH,
     REASON_CONN_REFUSED,
     REASON_USER_INPUT,
     REASON_NO_RESPONSE,
@@ -352,10 +369,11 @@ struct worker_handle {             // 1 worker = 1 thread = 1 polling
 };
 
 enum nmap_error_type {
-    NMAP_ERROR_DNS,    // Error related to DNS failure, likely
-    NMAP_ERROR_SYS,    // Error related to system call failure, unlikely
-    NMAP_ERROR_ICMP,   // Error related to ping procedure
-    NMAP_ERROR_SCAN,   // Undefined
+    NMAP_ERROR_DNS,            // Error related to DNS failure, likely
+    NMAP_ERROR_SYS,            // Error related to system call failure, unlikely
+    NMAP_ERROR_ICMP,           // Error related to ping procedure
+    NMAP_ERROR_INVALID_PACKET, // Error related to the reception of an
+                               // unexpected packet
     NMAP_ERROR_WORKER, // Error related to deadlock condition or unexpected
                        // behaviour, mostly for debugging
 };
@@ -379,8 +397,10 @@ struct nmap_error {
             uint8_t detail[8];
         } icmp;
         struct {
-
-        } scan;
+            char context[16];
+            struct iphdr iphdr;
+            char payload[];
+        } packet;
     } u;
 };
 

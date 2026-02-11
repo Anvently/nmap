@@ -285,12 +285,21 @@ static void add_hosts_from_file(struct host **vec_hosts, uint16_t *vec_ports,
     close(fd);
 }
 
+struct service *retrieve_services(uint16_t *vec_ports,
+                                  union scan_list enabled_scan);
+
 /// Parse host and ports argument and allocate pre-filled host structure
 /// Exit on errrors.
 struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
     int ret = 0;
     uint16_t *vec_ports = parse_ports(opts->ports);
     struct host *vec_hosts = ft_vector_create(sizeof(struct host), 1);
+
+    if (opts->no_service == false) { // read services name mapping file
+        opts->services_vec = retrieve_services(vec_ports, opts->enabled_scan);
+        if (opts->services_vec == NULL)
+            opts->no_service = true;
+    }
 
     if (vec_hosts == NULL)
         error(-1, errno, "allocating host vector");

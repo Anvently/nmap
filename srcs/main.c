@@ -4,6 +4,7 @@
 #include <time.h>
 
 const char *executable_name = "ft_nmap";
+const char *invoc_name;
 
 static const char help[] = "\n\
 Usage: ft_nmap [OPTION...] HOST ...\n\
@@ -20,7 +21,6 @@ Scan host port and more.\n\
   -S, --usurp=ADDRESS           spoof source address\n\
       --reason                  display how a port state was resolved\n\
       --open                    only display open or possibly opened ports\n\
-      --all                     display every port, even those marked as filtered or closed\n\
       --skip-ping               skip host discorvery and treat all hosts as online\n\
   -L, --list                    only list host that responded to ping but do not scan ports\n\
       --trace-packet            print every packet sended and received\n\
@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
     t_options options = dft_options;
     unsigned int nbr_args = 0;
     srand(time(NULL));
+    invoc_name = argv[0];
     if (ft_options_retrieve(argc - 1, argv + 1, &options, &nbr_args))
         return (2);
     if (options.help) {
