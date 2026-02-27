@@ -1,4 +1,6 @@
 #include <arpa/inet.h>
+#include <errno.h>
+#include <error.h>
 #include <netinet/ip.h>
 #include <nmap.h>
 
@@ -167,6 +169,14 @@ void print_scan_result(struct scan_result *result, struct host *host,
     printf("\n");
 }
 
+/// Cmp function to sort port vector
+static int cmp(void *a, void *b) {
+    if (((struct port_info *)a)->port < ((struct port_info *)b)->port)
+        return (-1);
+    else
+        return (1);
+}
+
 void print_host_result(struct host *host, t_options *opts) {
     (void)opts;
     if (host->state == STATE_DOUBLOON) {
@@ -178,9 +188,17 @@ void print_host_result(struct host *host, t_options *opts) {
            host->hostname_rsvl ? host->hostname_rsvl : "unkown",
            host_state_strings[host->state]);
     print_scan_result(&host->scans[SCAN_DNS], host, opts);
+    if (host->state == STATE_RESOLVE_FAILED) {
+        printf("---\n");
+        return;
+    }
     for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
-        if (host->scans[i].state > SCAN_DISABLE)
+        if (host->scans[i].state > SCAN_DISABLE) {
+            if (ft_merge_sort(host->scans[i].ports, host->scans[i].nbr_port,
+                              cmp, false))
+                error(-1, errno, "sorting port vector");
             print_scan_result(&host->scans[i], host, opts);
+        }
     }
     printf("---\n");
 }

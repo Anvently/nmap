@@ -77,7 +77,7 @@ void free_services_vec(struct service *vec_services) {
     const unsigned int nbr_service = ft_vector_size(vec_services);
     for (unsigned int i = 0; i < nbr_service; i++) {
         if (vec_services[i].name)
-            free(vec_services->name);
+            free(vec_services[i].name);
     }
     ft_vector_free((t_vector **)&vec_services);
 }
@@ -108,7 +108,7 @@ static int read_services_name(unsigned int nbr_service,
             continue;
         }
         name = ptr;
-        while (ft_isspace(*ptr) && *ptr)
+        while (ft_isspace(*ptr) == false && *ptr)
             ptr++;
         name_len = ptr - name;
         if (ft_strtoul_base(ptr, &port, (const char **)&ptr, "0123456789") ||
@@ -148,6 +148,7 @@ struct service *retrieve_services(uint16_t *vec_ports,
     const char *path = check_nmap_source();
     const uint16_t nbr_ports = ft_vector_size(vec_ports);
     struct service *vec_services;
+    struct service service;
     enum service_type service_needed = SERVICE_NONE;
     unsigned int nbr_service;
 
@@ -169,12 +170,16 @@ struct service *retrieve_services(uint16_t *vec_ports,
         error(-1, errno, "allocating services mapping vector");
     for (unsigned int i = 0, j = 0; i < nbr_ports; i++) {
         if (service_needed == SERVICE_BOTH || service_needed == SERVICE_TCP) {
-            vec_services[j++] =
+            service =
                 (struct service){.port = vec_ports[i], .type = SERVICE_TCP};
+            ft_vector_push((t_vector **)&vec_services, &service);
+            j++;
         }
         if (service_needed == SERVICE_BOTH || service_needed == SERVICE_UDP) {
-            vec_services[j++] =
+            service =
                 (struct service){.port = vec_ports[i], .type = SERVICE_UDP};
+            ft_vector_push((t_vector **)&vec_services, &service);
+            j++;
         }
     }
     if (ft_merge_sort(vec_services, nbr_service, cmp, false))
