@@ -98,10 +98,10 @@ struct static_vec {
 /// @param opts
 /// @return ```0``` for success, currently exit on every possible error.
 static int add_host(struct host **hosts, const char *hostname,
-                    uint16_t *vec_ports, t_options *opts) {
+                    t_options *opts) {
     struct host host = {.hostname = hostname};
     struct host *doubloon_match;
-    unsigned int nbr_port = ft_vector_size(vec_ports);
+    unsigned int nbr_port = ft_vector_size(opts->port_vec);
     struct static_vec ping_ports = {
         .hdr = {.capacity = 5, .len = 5, .type_size = sizeof(uint16_t)},
         .ports = {80, 443, 21, 22, 25}};
@@ -141,7 +141,7 @@ static int add_host(struct host **hosts, const char *hostname,
                 } else {
                     host.scans[i].nbr_port = nbr_port;
                     host.scans[i].ports =
-                        allocate_ports(vec_ports, opts->sequential);
+                        allocate_ports(opts->port_vec, opts->sequential);
                 }
                 if (host.scans[i].ports == NULL)
                     error(-1, errno,
@@ -157,100 +157,7 @@ static int add_host(struct host **hosts, const char *hostname,
     return (0);
 }
 
-/// Cmp function to sort port vector
-static int cmp(void *a, void *b) {
-    if (*(uint16_t *)a < *(uint16_t *)b)
-        return (-1);
-    else
-        return (1);
-}
-
-/// @brief
-/// @param ports
-/// @param n
-/// @return ```Duplicated port (1-65535)``` or ```0``` if none.
-static uint16_t find_duplicate_ports(uint16_t *ports, unsigned int n) {
-    for (unsigned int i = 0; i < n; i++) {
-        if (i + 1 < n && ports[i] == ports[i + 1])
-            return (ports[i]);
-    }
-    return (0);
-}
-
-/// @brief Push a port into vector, while checking for ```MAX_PORT_NBR```
-/// @param vec_ports
-/// @param port
-/// @return ```0``` for success, ```1``` if limits reached
-static int push_port(uint16_t *vec_ports, uint16_t port) {
-    if (ft_vector_size(vec_ports) >= MAX_PORT_NBR)
-        return (1);
-    ft_vector_push((t_vector **)&vec_ports, &port);
-    return (0);
-}
-
-/// @brief Parse ports string, fill a corresponding port vector (1 port = 1
-/// element) and check for duplicate
-/// @param ports
-/// @return Allocated port vector, exit on error (never returns ```NULL```)
-static uint16_t *parse_ports(const char *ports) {
-    uint16_t *vec_ports = ft_vector_create(sizeof(uint16_t), MAX_PORT_NBR),
-             duplicate;
-    unsigned long min, max;
-    const char *ptr = ports, *element;
-
-    if (vec_ports == NULL)
-        error(-1, errno, "allocating ports vector");
-
-    while (*ptr) {
-        element = ptr;
-        if (ft_strtoul_base(ptr, &min, &ptr, "0123456789") ||
-            min > UINT16_MAX || min == 0)
-            error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
-                  element);
-        if (*ptr == ',' || *ptr == '\0') {
-            if (push_port(vec_ports, (uint16_t)min))
-                error(1, errno,
-                      "Invalid port range `%s' : exceed number of ports "
-                      "allowed (%u)",
-                      ports, MAX_PORT_NBR);
-            if (*ptr == ',')
-                ptr++;
-        } else if (*ptr == '-') {
-            ++ptr;
-            if (*ptr == '\0' ||
-                ft_strtoul_base(ptr, &max, &ptr, "0123456789") ||
-                max > UINT16_MAX || max == 0)
-                error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
-                      element);
-            for (unsigned int i = min; i <= max; i++) {
-                if (push_port(vec_ports, (uint16_t)i))
-                    error(1, errno,
-                          "Invalid port range `%s' : exceed number of ports "
-                          "allowed (%u)",
-                          ports, MAX_PORT_NBR);
-            }
-            if (*ptr == ',')
-                ptr++;
-        } else {
-            error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
-                  element);
-        }
-    }
-    max = ft_vector_size(vec_ports);
-    if (max == 0)
-        error(1, 0, "no ports");
-    if (ft_vector_resize((t_vector **)&vec_ports, max))
-        error(-1, errno, "shrinking ports vector");
-    if (ft_merge_sort(vec_ports, max, cmp, false))
-        error(-1, errno, "sorting port vector");
-    duplicate = find_duplicate_ports(vec_ports, max);
-    if (duplicate)
-        error(1, 0, "duplicate port %hu", duplicate);
-    return (vec_ports);
-}
-
-static void add_hosts_from_file(struct host **vec_hosts, uint16_t *vec_ports,
-                                t_options *opts) {
+static void add_hosts_from_file(struct host **vec_hosts, t_options *opts) {
     struct stat file_stats;
     char *mapped;
     size_t i = 0, start;
@@ -277,7 +184,7 @@ static void add_hosts_from_file(struct host **vec_hosts, uint16_t *vec_ports,
             i++;
         if (i - start > 0) {
             mapped[i++] = '\0';
-            add_host(vec_hosts, mapped + start, vec_ports, opts);
+            add_host(vec_hosts, mapped + start, opts);
         }
     }
     if (errno != 0)
@@ -292,11 +199,11 @@ struct service *retrieve_services(uint16_t *vec_ports,
 /// Exit on errrors.
 struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
     int ret = 0;
-    uint16_t *vec_ports = parse_ports(opts->ports);
     struct host *vec_hosts = ft_vector_create(sizeof(struct host), 1);
 
     if (opts->no_service == false) { // read services name mapping file
-        opts->services_vec = retrieve_services(vec_ports, opts->enabled_scan);
+        opts->services_vec =
+            retrieve_services(opts->port_vec, opts->enabled_scan);
         if (opts->services_vec == NULL)
             opts->no_service = true;
     }
@@ -305,15 +212,14 @@ struct host *hosts_create(char **args, unsigned int nbr_args, t_options *opts) {
         error(-1, errno, "allocating host vector");
     while (nbr_args) {
         if (*args != NULL) {
-            if ((ret = add_host(&vec_hosts, *args, vec_ports, opts)))
+            if ((ret = add_host(&vec_hosts, *args, opts)))
                 break;
             nbr_args--;
         }
         args++;
     }
     if (opts->file)
-        add_hosts_from_file(&vec_hosts, vec_ports, opts);
+        add_hosts_from_file(&vec_hosts, opts);
     // ft_vector_iter((t_vector **)vec_hosts, (void (*)(void *))print_host);
-    ft_vector_free((t_vector **)&vec_ports);
     return (vec_hosts);
 }

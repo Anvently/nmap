@@ -216,6 +216,11 @@ static void confirm_task(struct task_handle *task) {
 static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
                              unsigned int *nbr_socket, t_options *opts) {
     (void)opts;
+    float ftimeout = task->host->rtt * 10.f;
+    struct timeval timeout;
+    timeout.tv_sec = (time_t)(ftimeout / 1000.f);
+    timeout.tv_usec =
+        (time_t)((ftimeout - ((float)timeout.tv_sec * 1000.f)) * 1000.f);
 
     task->scan_type = scan->type;
     task->error = &scan->error;
@@ -232,7 +237,7 @@ static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
         task->packet_rcv = tcp_packet_rcv;
         task->packet_timeout = tcp_packet_timeout;
         task->release = tcp_release;
-        task->timeout = (struct timeval){.tv_sec = PORT_TIMEOUT, .tv_usec = 0};
+        task->timeout = task->base_timeout = timeout;
         task->io_data.tcp.daddr = task->host->addr.sin_addr;
         task->io_data.ping.saddr = (struct sockaddr_in){0};
         *nbr_socket += 1;
@@ -277,7 +282,7 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->packet_timeout = NULL;
         task->release = NULL;
         task->packet_send = NULL;
-        task->timeout = (struct timeval){0};
+        task->timeout = task->base_timeout = (struct timeval){0};
         task->io_data.dns.hostname_rslv = NULL;
         task->io_data.dns.addr = (struct sockaddr_in){0};
         task->io_data.dns.hostname = host->hostname;
@@ -297,7 +302,8 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->packet_rcv = ping_packet_rcv;
         task->packet_timeout = ping_packet_timeout;
         task->release = ping_release;
-        task->timeout = (struct timeval){.tv_sec = PING_TIMEOUT, .tv_usec = 0};
+        task->timeout = task->base_timeout =
+            (struct timeval){.tv_sec = PING_TIMEOUT, .tv_usec = 0};
         task->io_data.ping.daddr = host->addr.sin_addr;
         task->io_data.ping.rslt = &host->scans[SCAN_PING].ports[available_port];
         task->error = &host->scans[SCAN_PING].ports[available_port].error;
@@ -408,7 +414,6 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     struct scan_result *scan;
     uint16_t available_port;
     struct port_info *port;
-    bool ret;
 
     scan = &task.host->scans[task.scan_type];
     if (--scan->assigned_worker == 0) {
@@ -460,13 +465,13 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
         }
         break;
     }
-    ret = switch_state(task.host);
+    switch_state(task.host);
     if (scan->state == SCAN_DONE && opts->verbose > 0) {
         printf("Scan done, host %s\n", task.host->hostname);
         print_scan_result(scan, task.host, opts);
     }
-    if (ret)
-        print_host_result(task.host, opts);
+    // if (ret)
+    //     print_host_result(task.host, opts);
     // if (task.host->state != STATE_ERROR && *task.error) {
     //     free(*task.error);
     //     *task.error = NULL;
@@ -479,7 +484,6 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
                              t_options *opts) {
     struct scan_result *scan;
     uint16_t available_port;
-    bool ret;
 
     // if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose >
     // 1)
@@ -516,8 +520,13 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         case REASON_ICMP_REPLY:
         case REASON_RST:
         case REASON_SYN_ACK:
+            task.host->state = STATE_UP;
+            task.host->rtt = scan->ports[available_port].reason.rtt;
+            break;
+
         case REASON_USER_INPUT:
             task.host->state = STATE_UP;
+            task.host->rtt = DFT_PORT_TIMEOUT;
             break;
 
         case REASON_HOST_UNREACH:
@@ -543,8 +552,11 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_NULL:
     case SCAN_FIN:
     case SCAN_XMAS:
-        if (*task.error && (*task.error)->type == NMAP_ERROR_WORKER) {
+        // if (*task.error && ((*task.error)->type == NMAP_ERROR_WORKER)) {
+        if (*task.error) {
             for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
+                if (task.io_data.tcp.ports[i].state != PORT_SCANNING)
+                    continue;
                 task.io_data.tcp.ports[i].state = PORT_ERROR;
                 task.io_data.tcp.ports[i].reason.type = REASON_ERROR;
             }
@@ -557,13 +569,13 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     default:
         break;
     }
-    ret = switch_state(task.host);
+    switch_state(task.host);
     if (scan->state == SCAN_DONE && opts->verbose > 0) {
         printf("Scan done, host %s\n", task.host->hostname);
         print_scan_result(scan, task.host, opts);
     }
-    if (ret)
-        print_host_result(task.host, opts);
+    // if (ret)
+    //     print_host_result(task.host, opts);
 }
 
 static void handle_worker_result(struct worker_handle *worker, void *ret,
@@ -697,6 +709,8 @@ static int main_loop(struct host *vec_hosts, t_options *opts) {
     return (0);
 }
 
+uint16_t *parse_ports(const char *ports);
+
 /// @brief
 /// @param args equivalent to ```argv + 1```, option argument are replaced
 /// with
@@ -708,6 +722,7 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
     int ret = 0;
     struct host *vec_hosts;
     // main loop
+    opts->port_vec = parse_ports(opts->ports);
     vec_hosts = hosts_create(args, nbr_args, opts);
     ret = main_loop(vec_hosts, opts);
     if (opts->verbose) { // Reprint every host result at the end
@@ -716,5 +731,6 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
     }
     hosts_free(&vec_hosts);
     free_services_vec(opts->services_vec);
+    ft_vector_free((t_vector **)&opts->port_vec);
     return (ret);
 }

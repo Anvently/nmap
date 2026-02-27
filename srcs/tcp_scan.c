@@ -89,7 +89,8 @@ int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
 int socket_open_tcp(t_options *opts, struct in_addr daddr,
                     struct in_addr *saddr);
 
-static void resolve_state(enum scan_type scan_type, struct port_info *port);
+static void resolve_state(struct tcp_context *ctx, enum scan_type scan_type,
+                          struct port_info *port);
 
 int tcp_init(struct task_handle *data) {
     data->ctx = calloc(1, sizeof(struct tcp_context));
@@ -165,10 +166,11 @@ int tcp_packet_timeout(struct task_handle *data) {
         if (port_info->state != PORT_SCANNING) {
             continue;
         }
-        data->io_data.ping.rslt->reason.type = REASON_NO_RESPONSE;
-        data->io_data.ping.rslt->reason.ttl = 0; // ttl is time out
-        data->io_data.ping.rslt->reason.rtt = 0.f;
-        resolve_state(data->scan_type, port_info);
+        port_info->reason.type = REASON_NO_RESPONSE;
+        port_info->reason.ttl = 0; // ttl is time out
+        port_info->reason.rtt = 0.f;
+        resolve_state((struct tcp_context *)data->ctx, data->scan_type,
+                      port_info);
     }
     return (1);
 }
@@ -183,7 +185,8 @@ int tcp_release(struct task_handle *data) {
     return (0);
 }
 
-static void resolve_state(enum scan_type scan_type, struct port_info *port) {
+static void resolve_state(struct tcp_context *ctx, enum scan_type scan_type,
+                          struct port_info *port) {
     switch (scan_type) {
     case SCAN_SYN:
         switch (port->reason.type) {
@@ -205,6 +208,7 @@ static void resolve_state(enum scan_type scan_type, struct port_info *port) {
 
         case REASON_ERROR:
         default:
+            packet_error(&port->error, "unexpected response", &ctx->packet);
             port->state = PORT_ERROR;
             break;
         }
@@ -227,6 +231,7 @@ static void resolve_state(enum scan_type scan_type, struct port_info *port) {
 
         case REASON_ERROR:
         default:
+            packet_error(&port->error, "unexpected response", &ctx->packet);
             port->state = PORT_ERROR;
             break;
         }
@@ -253,6 +258,7 @@ static void resolve_state(enum scan_type scan_type, struct port_info *port) {
 
         case REASON_ERROR:
         default:
+            packet_error(&port->error, "unexpected response", &ctx->packet);
             port->state = PORT_ERROR;
             break;
         }
@@ -270,7 +276,7 @@ static uint8_t get_tcp_flags(enum scan_type type) {
     case SCAN_ACK:
         return (TH_ACK);
     case SCAN_FIN:
-        return (TH_SYN);
+        return (TH_FIN);
     case SCAN_XMAS:
         return (TH_FIN | TH_PUSH | TH_URG);
     case SCAN_NULL:
@@ -336,7 +342,6 @@ int tcp_packet_send(struct task_handle *data) {
             return (1);
         }
         ctx->state = TCPSTATE_SENT;
-        data->timeout = (struct timeval){.tv_sec = PORT_TIMEOUT};
         data->flags.send_state = 1;
         break;
     case TCPSTATE_SENT: // Maybe there is still an ICMP echo request to
@@ -468,7 +473,7 @@ static void handle_rcv_packet(struct task_handle *data,
     default:
         break;
     }
-    resolve_state(data->scan_type, port);
+    resolve_state(ctx, data->scan_type, port);
 }
 
 int tcp_packet_rcv(struct task_handle *data, struct pollfd poll) {

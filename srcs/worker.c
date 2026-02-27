@@ -165,7 +165,7 @@ static unsigned int loop_running_tasks(struct worker_handle *worker,
         } else if (task->packet_send) { // Nothing was sent yet (task was just
                                         // initialized or something
             // received and read but no answer was sent immediately)
-            task->timeout = (struct timeval){.tv_sec = DFT_TASK_TIMEOUT};
+            task->timeout = task->base_timeout;
             if (task->packet_send(task)) {
                 running--;
                 release_task(task);

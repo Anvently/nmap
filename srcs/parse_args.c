@@ -1,4 +1,7 @@
 #include <arpa/inet.h>
+#include <errno.h>
+#include <error.h>
+#include <libft.h>
 #include <netinet/in.h>
 #include <nmap.h>
 #include <string.h>
@@ -323,9 +326,101 @@ static int register_file(t_options *opt, char *arg) {
     return (0);
 }
 
+/// Cmp function to sort port vector
+static int cmp(void *a, void *b) {
+    if (*(uint16_t *)a < *(uint16_t *)b)
+        return (-1);
+    else
+        return (1);
+}
+
+/// @brief
+/// @param ports
+/// @param n
+/// @return ```Duplicated port (1-65535)``` or ```0``` if none.
+static uint16_t find_duplicate_ports(uint16_t *ports, unsigned int n) {
+    for (unsigned int i = 0; i < n; i++) {
+        if (i + 1 < n && ports[i] == ports[i + 1])
+            return (ports[i]);
+    }
+    return (0);
+}
+
+/// @brief Push a port into vector, while checking for ```MAX_PORT_NBR```
+/// @param vec_ports
+/// @param port
+/// @return ```0``` for success, ```1``` if limits reached
+static int push_port(uint16_t *vec_ports, uint16_t port) {
+    if (ft_vector_size(vec_ports) >= MAX_PORT_NBR)
+        return (1);
+    ft_vector_push((t_vector **)&vec_ports, &port);
+    return (0);
+}
+
+/// @brief Parse ports string, fill a corresponding port vector (1 port = 1
+/// element) and check for duplicate
+/// @param ports
+/// @return Allocated port vector, exit on error (never returns ```NULL```)
+uint16_t *parse_ports(const char *ports) {
+    uint16_t *vec_ports = ft_vector_create(sizeof(uint16_t), MAX_PORT_NBR),
+             duplicate;
+    unsigned long min, max;
+    const char *ptr = ports, *element;
+
+    if (vec_ports == NULL)
+        error(-1, errno, "allocating ports vector");
+
+    while (*ptr) {
+        element = ptr;
+        if (ft_strtoul_base(ptr, &min, &ptr, "0123456789") ||
+            min > UINT16_MAX || min == 0)
+            error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
+                  element);
+        if (*ptr == ',' || *ptr == '\0') {
+            if (push_port(vec_ports, (uint16_t)min))
+                error(1, errno,
+                      "Invalid port range `%s' : exceed number of ports "
+                      "allowed (%u)",
+                      ports, MAX_PORT_NBR);
+            if (*ptr == ',')
+                ptr++;
+        } else if (*ptr == '-') {
+            ++ptr;
+            if (*ptr == '\0' ||
+                ft_strtoul_base(ptr, &max, &ptr, "0123456789") ||
+                max > UINT16_MAX || max == 0)
+                error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
+                      element);
+            for (unsigned int i = min; i <= max; i++) {
+                if (push_port(vec_ports, (uint16_t)i))
+                    error(1, errno,
+                          "Invalid port range `%s' : exceed number of ports "
+                          "allowed (%u)",
+                          ports, MAX_PORT_NBR);
+            }
+            if (*ptr == ',')
+                ptr++;
+        } else {
+            error(1, errno, "Invalid port range `%s' near `%.4s...'", ports,
+                  element);
+        }
+    }
+    max = ft_vector_size(vec_ports);
+    if (max == 0)
+        error(1, 0, "no ports");
+    if (ft_vector_resize((t_vector **)&vec_ports, max))
+        error(-1, errno, "shrinking ports vector");
+    if (ft_merge_sort(vec_ports, max, cmp, false))
+        error(-1, errno, "sorting port vector");
+    duplicate = find_duplicate_ports(vec_ports, max);
+    if (duplicate)
+        error(1, 0, "duplicate port %hu", duplicate);
+    return (vec_ports);
+}
+
 int check_options(t_options *options) {
     options->enabled_scan.ping = options->skip_discovery ? 0 : 1;
-
+    options->port_vec = parse_ports(options->ports);
     return (0);
 }
 

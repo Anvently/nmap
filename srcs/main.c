@@ -15,14 +15,15 @@ Scan host port and more.\n\
       --ttl=N                   specify N as time-to-live\n\
   -g, --source-port=N           specify source port\n\
   -v, --verbose                 verbose output\n\
-      --data=PATTERN            fill ICMP packet with given pattern (hex)\n\
+      --data=PATTERN            fill payloads with given pattern (hex)\n\
   -r, --sequential              do not randomize port and scan them in order (user-order)\n\
   -f, --mtu=NUMBER              fragment packets with given MTU\n\
   -S, --usurp=ADDRESS           spoof source address\n\
       --reason                  display how a port state was resolved\n\
       --open                    only display open or possibly opened ports\n\
-      --skip-ping               skip host discorvery and treat all hosts as online\n\
+      --skip-ping               skip host discovery and treat all hosts as online\n\
   -L, --list                    only list host that responded to ping but do not scan ports\n\
+  -N, --no-service              do not resolve service name\n\
       --trace-packet            print every packet sended and received\n\
   -p, --port=[PORT,MIN-MAX,...] specify custom port to scan, takes individual port or ranges (default to 1-1024)\n\
   -t, --threads                 specify a maximum number of threads to use (1-250), default to 16\n\

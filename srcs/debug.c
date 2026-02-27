@@ -93,6 +93,8 @@ static void _print_verbose_packet_pad(const char *buffer, size_t len,
                                       unsigned int padding);
 
 void print_packet_short(const char *buffer, const char *hdr);
+static void _print_packet_short(const char *buffer, const char *hdr,
+                                bool show_tid);
 
 void print_nmap_error(struct nmap_error *error);
 static void print_dns_error(struct nmap_error *error);
@@ -149,6 +151,20 @@ void print_task(struct task_handle *task) {
 
         break;
     case SCAN_PING:
+        struct port_info *port = &task->io_data.ping.rslt[0];
+        printf("[%hu:%.4s]", port->port, port_state_strings[port->state]);
+        break;
+    case SCAN_ACK:
+    case SCAN_SYN:
+    case SCAN_XMAS:
+    case SCAN_FIN:
+        printf("[");
+        for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
+            struct port_info *port = &task->io_data.tcp.ports[i];
+            printf("%hu:%.4s%s", port->port, port_state_strings[port->state],
+                   i + 1 == task->io_data.tcp.nbr_port ? "" : ",");
+        }
+        printf("]");
         break;
     default:
         break;
@@ -325,12 +341,21 @@ static void _print_icmp_org_packet(const struct iphdr *iphdr, int padding) {
 }
 
 void print_packet_short(const char *buffer, const char *hdr) {
+    _print_packet_short(buffer, hdr, true);
+}
+
+static void _print_packet_short(const char *buffer, const char *hdr,
+                                bool show_tid) {
     const struct iphdr *iphdr = (const struct iphdr *)buffer;
     const struct tcphdr *tcphdr =
         (const struct tcphdr *)(buffer + sizeof(*iphdr));
     const struct icmphdr *icmphdr =
         (const struct icmphdr *)(buffer + sizeof(*iphdr));
-    int padding = printf("[%d] %s ", gettid(), hdr ? hdr : "");
+    int padding;
+    if (show_tid)
+        padding = printf("[%d] %s ", gettid(), hdr ? hdr : "");
+    else if (hdr)
+        padding = printf("%s ", hdr);
     switch (iphdr->protocol) {
     case IPPROTO_ICMP:
         printf("ICMP [%s > ",
@@ -395,6 +420,6 @@ static void print_icmp_error(struct nmap_error *error) {
            inet_ntoa((struct in_addr){.s_addr = error->u.icmp.iphdr.saddr}));
 }
 static void print_invalid_packet_error(struct nmap_error *error) {
-    printf("%s ⁼> ", error->u.packet.context);
-    print_packet_short((const char *)&error->u.packet.iphdr, "");
+    printf("%s => ", error->u.packet.context);
+    _print_packet_short((const char *)&error->u.packet.iphdr, "", false);
 }

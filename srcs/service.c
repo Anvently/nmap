@@ -10,18 +10,21 @@ extern const char *invoc_name;
 const char *retrieve_service_name(enum scan_type type, uint16_t port,
                                   struct service *vec_services) {
     const unsigned int nbr_services = ft_vector_size(vec_services);
+    const char *name = "unknown";
 
     for (unsigned int i = 0; i < nbr_services; i++) {
         if (vec_services[i].port == port) {
-            if (vec_services[i].type == SERVICE_TCP && type != SCAN_UDP)
-                return (vec_services[i].name);
-            else if (vec_services[i].type == SERVICE_UDP && type == SCAN_UDP)
-                return (vec_services[i].name);
+            if ((vec_services[i].type == SERVICE_TCP && type != SCAN_UDP) ||
+                (vec_services[i].type == SERVICE_UDP && type == SCAN_UDP)) {
+                if (vec_services[i].name)
+                    name = vec_services[i].name;
+                break;
+            }
         }
         if (vec_services[i].port > port)
-            return (NULL);
+            break;
     }
-    return (NULL);
+    return (name);
 }
 
 /// @brief In order to find port-service mapping file, different strategies are
