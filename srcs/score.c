@@ -8,6 +8,19 @@ float compute_rtt(struct timeval start, struct timeval end) {
             ((end.tv_usec / 1000.f) - (start.tv_usec / 1000.f)));
 }
 
+void update_host_rtt(struct host_stats *stat, float rtt) {
+    float delta1, delta2;
+    if (rtt > 0 && stat->min_rtt > rtt)
+        stat->min_rtt = rtt;
+    if (rtt > 0 && stat->max_rtt < rtt)
+        stat->max_rtt = rtt;
+    stat->total += 1;
+    delta1 = rtt - stat->mean_rtt;
+    stat->mean_rtt += delta1 / stat->total;
+    delta2 = rtt - stat->mean_rtt;
+    stat->M2 += delta1 * delta2;
+}
+
 /* static float get_stddev(t_ping_score *score) {
     if (score->total < 2)
         return (0.f);
@@ -26,16 +39,4 @@ void print_score(const char *hostname, t_ping_score *score) {
                score->min, score->mean, score->max, get_stddev(score));
     }
 }
-
-void update_score(t_ping_score *score, float rtt) {
-    float delta1, delta2;
-    if (rtt > 0 && score->min > rtt)
-        score->min = rtt;
-    if (rtt > 0 && score->max < rtt)
-        score->max = rtt;
-    score->success += 1;
-    delta1 = rtt - score->mean;
-    score->mean += delta1 / score->total;
-    delta2 = rtt - score->mean;
-    score->M2 += delta1 * delta2;
-} */
+*/

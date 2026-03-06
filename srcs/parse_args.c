@@ -21,7 +21,7 @@ static int register_list(t_options *opt, char *);
 static int register_skip_discovery(t_options *opt, char *);
 static int register_src_port(t_options *opt, char *);
 static int register_open(t_options *opt, char *);
-static int register_all(t_options *opt, char *);
+static int register_rtt_timeout_factor(t_options *opt, char *);
 static int register_ports(t_options *opt, char *);
 static int register_threads(t_options *opt, char *);
 static int register_scan(t_options *opt, char *);
@@ -91,10 +91,10 @@ t_opt_flag options_list[OPT_NBR] = {
                               .handler = &register_open,
                               .short_id = 0,
                               .long_id = "open"},
-    [OPT_ALL] = (t_opt_flag){.arg = ARG_NONE,
-                             .handler = &register_all,
-                             .short_id = 0,
-                             .long_id = "all"},
+    [OPT_RTT_TIMEOUT] = (t_opt_flag){.arg = ARG_REQUIRED,
+                                     .handler = &register_rtt_timeout_factor,
+                                     .short_id = 0,
+                                     .long_id = "rtt-timeout"},
     [OPT_PORT] = (t_opt_flag){.arg = ARG_REQUIRED,
                               .handler = &register_ports,
                               .short_id = 'p',
@@ -255,10 +255,15 @@ static int register_open(t_options *opt, char *arg) {
     opt->open = true;
     return (0);
 }
-static int register_all(t_options *opt, char *arg) {
-    (void)arg;
-    (void)opt;
-    opt->all = true;
+static int register_rtt_timeout_factor(t_options *opt, char *arg) {
+    if (ft_strtof(arg, &opt->rtt_timeout, NULL)) {
+        ft_options_err_invalid_argument("rtt-timeout", arg, NULL);
+        return (2);
+    }
+    if (opt->rtt_timeout <= 0.f) {
+        ft_options_err_invalid_argument("rtt-timeout", arg, NULL);
+        return (2);
+    }
     return (0);
 }
 static int register_ports(t_options *opt, char *arg) {

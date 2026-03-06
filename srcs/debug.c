@@ -189,6 +189,11 @@ void print_scan_state(struct scan_result *scan) {
     printf("\n");
 }
 
+static void print_host_rtt(struct host_stats *stat) {
+    printf("nbr=%u|min=%.2f|max=%.2f|mean=%.2f\n", stat->total, stat->min_rtt,
+           stat->max_rtt, stat->mean_rtt);
+}
+
 void print_host(struct host *host) {
     if (host->state == STATE_DOUBLOON) {
         printf("Host %s is a duplicated of another host\n---\n",
@@ -203,6 +208,7 @@ void print_host(struct host *host) {
     printf("%s (%s - %s) : %s (%hhu)\n", host->hostname, addr_ipv4,
            host->hostname_rsvl == NULL ? "unkown" : host->hostname_rsvl,
            host_state_strings[host->state], host->state);
+    print_host_rtt(&host->stats);
     printf("Current scans : %c%c%c%c%c%c%c%c%c\n",
            host->current_scan.dns ? 'D' : 0, host->current_scan.ping ? 'P' : 0,
            host->current_scan.syn ? 'S' : 0, host->current_scan.ack ? 'A' : 0,

@@ -13,8 +13,9 @@
 #define PING_TIMEOUT 3 // Default ping timeout
 // Default timeout for port scan when host_ping is disabled
 #define DFT_PORT_TIMEOUT 500.f
-#define PORT_TIMEOUT_FACTOR 10.f // Timeout for port scan is host rtt * factor
-#define MAX_WORKER 250           // Maximum number of threads
+#define DFT_PORT_TIMEOUT_FACTOR                                                \
+    20.f               // Timeout for port scan is host rtt * factor
+#define MAX_WORKER 250 // Maximum number of threads
 // Maximum number of task a worker can take
 #define MAX_TASK_WORKER 16
 // Maximum number of port a single task is able to scan (or maximum number of
@@ -49,8 +50,9 @@ enum OPTIONS {
     OPT_SRC_PORT,       // -g, --source-port
     OPT_NO_SERVICE,
     OPT_TRACE_PACKET,
-    OPT_OPEN, // --open
-    OPT_ALL,  // --all
+    OPT_OPEN,        // --open
+    OPT_RTT_TIMEOUT, // --all
+
     // CUSTOMs
     OPT_PORT,    // -p, --port
     OPT_THREADS, // -t, --threads (0 à 250)
@@ -109,7 +111,7 @@ struct s_options {
     bool skip_discovery;
     uint16_t src_port;
     bool open;
-    bool all;
+    float rtt_timeout;
     const char *ports;
     uint16_t threads;
     union scan_list enabled_scan; // 1 scan = 1 bit
@@ -226,12 +228,20 @@ struct scan_result {
     struct nmap_error *error;
 };
 
+struct host_stats {
+    unsigned int total;
+    float mean_rtt;
+    float M2;
+    float min_rtt;
+    float max_rtt;
+};
+
 struct host {
     struct sockaddr_in addr;
     char *hostname_rsvl; // FQDN - resolved host with getnameinfo()
     const char *hostname;
     enum host_state state;
-    float rtt;
+    struct host_stats stats;
     struct scan_result scans[SCAN_NBR];
     union scan_list current_scan;
 };

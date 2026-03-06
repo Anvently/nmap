@@ -90,6 +90,8 @@ void print_port(struct port_info *port, enum scan_type type, t_options *opts) {
         ret = printf("%*s%s", padding, "", reason_strings[port->reason.type]);
         if (port->reason.ttl)
             ret += printf(" ttl %hhu", port->reason.ttl);
+        if (port->reason.rtt)
+            ret += printf(" rtt %.2f", port->reason.rtt);
         padding = 16 - (ret - padding);
     }
     if (opts->verbose > 0 && port->error) {
@@ -109,6 +111,9 @@ void print_ports(struct scan_result *scan, t_options *opts) {
         printf("ERROR");
     printf("\n");
     for (uint16_t i = 0; i < scan->nbr_port; i++) {
+        if (opts->open && (scan->ports[i].state != PORT_OPENED &&
+                           scan->ports[i].state != PORT_OPEN_FILTERED))
+            continue;
         print_port(&scan->ports[i], scan->type, opts);
     }
 }

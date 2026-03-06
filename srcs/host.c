@@ -99,7 +99,8 @@ struct static_vec {
 /// @return ```0``` for success, currently exit on every possible error.
 static int add_host(struct host **hosts, const char *hostname,
                     t_options *opts) {
-    struct host host = {.hostname = hostname};
+    struct host host = {.hostname = hostname,
+                        .stats = {.min_rtt = 100000000.f}};
     struct host *doubloon_match;
     unsigned int nbr_port = ft_vector_size(opts->port_vec);
     struct static_vec ping_ports = {

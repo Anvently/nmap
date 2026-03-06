@@ -21,6 +21,7 @@ Scan host port and more.\n\
   -S, --usurp=ADDRESS           spoof source address\n\
       --reason                  display how a port state was resolved\n\
       --open                    only display open or possibly opened ports\n\
+      --rtt-timeout             set factor used to calculate port timeout based on host rtt (timeout=rtt*factor)\n\
       --skip-ping               skip host discovery and treat all hosts as online\n\
   -L, --list                    only list host that responded to ping but do not scan ports\n\
   -N, --no-service              do not resolve service name\n\
@@ -40,7 +41,8 @@ static t_options dft_options = {.size = 0,
                                 .ports = "1-1024",
                                 .threads = 16,
                                 .ttl = 64,
-                                .pattern = "0123456789abcdef"};
+                                .pattern = "0123456789abcdef",
+                                .rtt_timeout = DFT_PORT_TIMEOUT_FACTOR};
 
 int main(int argc, char **argv) {
     t_options options = dft_options;

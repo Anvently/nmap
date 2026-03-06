@@ -19,6 +19,8 @@ void print_worker(struct worker_handle *worker);
 
 void *worker_routine(void *data);
 
+void update_host_rtt(struct host_stats *stat, float rtt);
+
 void user_input(struct host *vec_hosts,
                 struct worker_handle workers_pool[MAX_WORKER], t_options *opts);
 
@@ -216,7 +218,7 @@ static void confirm_task(struct task_handle *task) {
 static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
                              unsigned int *nbr_socket, t_options *opts) {
     (void)opts;
-    float ftimeout = task->host->rtt * 10.f;
+    float ftimeout = task->host->stats.mean_rtt * opts->rtt_timeout;
     struct timeval timeout;
     timeout.tv_sec = (time_t)(ftimeout / 1000.f);
     timeout.tv_usec =
@@ -413,6 +415,7 @@ static bool check_hosts_done(struct host *vec_hosts) {
 static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     struct scan_result *scan;
     uint16_t available_port;
+    bool ret;
     struct port_info *port;
 
     scan = &task.host->scans[task.scan_type];
@@ -465,13 +468,13 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
         }
         break;
     }
-    switch_state(task.host);
+    ret = switch_state(task.host);
     if (scan->state == SCAN_DONE && opts->verbose > 0) {
         printf("Scan done, host %s\n", task.host->hostname);
         print_scan_result(scan, task.host, opts);
     }
-    // if (ret)
-    //     print_host_result(task.host, opts);
+    if (ret && opts->verbose)
+        print_host_result(task.host, opts);
     // if (task.host->state != STATE_ERROR && *task.error) {
     //     free(*task.error);
     //     *task.error = NULL;
@@ -484,6 +487,7 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
                              t_options *opts) {
     struct scan_result *scan;
     uint16_t available_port;
+    bool ret;
 
     // if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose >
     // 1)
@@ -521,12 +525,13 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         case REASON_RST:
         case REASON_SYN_ACK:
             task.host->state = STATE_UP;
-            task.host->rtt = scan->ports[available_port].reason.rtt;
+            update_host_rtt(&task.host->stats,
+                            scan->ports[available_port].reason.rtt);
             break;
 
         case REASON_USER_INPUT:
             task.host->state = STATE_UP;
-            task.host->rtt = DFT_PORT_TIMEOUT;
+            update_host_rtt(&task.host->stats, DFT_PORT_TIMEOUT);
             break;
 
         case REASON_HOST_UNREACH:
@@ -552,6 +557,12 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_NULL:
     case SCAN_FIN:
     case SCAN_XMAS:
+        for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
+            if (task.io_data.tcp.ports[i].reason.rtt <= 0.f)
+                continue;
+            update_host_rtt(&task.host->stats,
+                            task.io_data.tcp.ports[i].reason.rtt);
+        }
         // if (*task.error && ((*task.error)->type == NMAP_ERROR_WORKER)) {
         if (*task.error) {
             for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
@@ -569,13 +580,13 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     default:
         break;
     }
-    switch_state(task.host);
+    ret = switch_state(task.host);
     if (scan->state == SCAN_DONE && opts->verbose > 0) {
         printf("Scan done, host %s\n", task.host->hostname);
         print_scan_result(scan, task.host, opts);
     }
-    // if (ret)
-    //     print_host_result(task.host, opts);
+    if (ret && opts->verbose)
+        print_host_result(task.host, opts);
 }
 
 static void handle_worker_result(struct worker_handle *worker, void *ret,
@@ -725,7 +736,7 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
     opts->port_vec = parse_ports(opts->ports);
     vec_hosts = hosts_create(args, nbr_args, opts);
     ret = main_loop(vec_hosts, opts);
-    if (opts->verbose) { // Reprint every host result at the end
+    if (opts->verbose == 0) { // Reprint every host result at the end
         for (unsigned int i = 0; i < ft_vector_size(vec_hosts); i++)
             print_host_result(&vec_hosts[i], opts);
     }

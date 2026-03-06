@@ -33,6 +33,7 @@ struct tcp_context {
     size_t pattern_idx; // Idx where pattern start (or headers end)
     struct packet packet;
     uint16_t waiting; // Count how many port are waiting for a response
+    struct timeval send_stamp;
 };
 
 static void sys_error(struct nmap_error **error_ptr, const char *func_fail,
@@ -329,6 +330,7 @@ int tcp_packet_send(struct task_handle *data) {
 
     switch (ctx->state) {
     case TCPSTATE_START: // SEND tcp syn
+        gettimeofday(&ctx->send_stamp, NULL);
         for (uint16_t i = 0; i < data->io_data.tcp.nbr_port; i++) {
             port = &data->io_data.tcp.ports[i];
             if (send_pkt_to_port(data, port) == 0) {
@@ -397,6 +399,8 @@ find_port(uint16_t nbr_port, struct port_info ports[nbr_port], uint16_t port) {
     return (NULL);
 }
 
+void print_nmap_error(struct nmap_error *error);
+
 static struct port_info *demul_packet(struct task_handle *data) {
     struct tcp_context *ctx = (struct tcp_context *)data->ctx;
     struct port_info *port;
@@ -420,11 +424,20 @@ static struct port_info *demul_packet(struct task_handle *data) {
         return (NULL);
     }
     if (port == NULL) {
-        packet_error(data->error, "no port match", &ctx->packet);
-        data->flags.error = 1;
+        if (data->opts->verbose > 1) {
+            packet_error(data->error, "no port match", &ctx->packet);
+            print_nmap_error(*data->error);
+            printf("Rtt factor is probably too small, try again with "
+                   "--rtt-timeout=%f\n",
+                   data->opts->rtt_timeout * 1.5f);
+            free(*data->error);
+            *data->error = NULL;
+        }
     }
     return (port);
 }
+
+float compute_rtt(struct timeval start, struct timeval end);
 
 /// @brief
 /// @param data
@@ -434,6 +447,7 @@ static void handle_rcv_packet(struct task_handle *data,
     struct tcp_context *ctx = (struct tcp_context *)data->ctx;
 
     port->reason.ttl = ctx->packet.buffer.iphdr.ttl;
+    port->reason.rtt = compute_rtt(ctx->send_stamp, ctx->packet.stamp);
     switch (ctx->packet.buffer.iphdr.protocol) {
     case IPPROTO_TCP:
         if (ctx->packet.buffer.tcp.tcphdr.th_flags & TH_SYN)
@@ -493,8 +507,9 @@ int tcp_packet_rcv(struct task_handle *data, struct pollfd poll) {
             break;
         case TCPSTATE_SENT: // Handle packet
             port = demul_packet(data);
-            if (port == NULL)
-                return (1);
+            if (port == NULL) {
+                break;
+            }
             handle_rcv_packet(data, port);
             if (--ctx->waiting == 0) // all port scanned
                 return (1);
