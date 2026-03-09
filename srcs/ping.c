@@ -15,7 +15,7 @@
 #include <time.h>
 
 struct ping_context {
-    // struct tcp_data tcp_data;
+    // struct tcp_udp_data tcp_udp_data;
     enum tcp_state {
         TCPSTATE_START = 0,
         TCPSTATE_SYN_SENT,
@@ -38,38 +38,9 @@ int socket_open_tcp(t_options *opts, struct in_addr daddr,
                     struct in_addr *saddr);
 int socket_open_icmp(t_options *opts, struct in_addr daddr);
 
-static void sys_error(struct nmap_error **error_ptr, const char *func_fail,
-                      const char *detail) {
-    struct nmap_error *error;
-    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
-    if (error == NULL)
-        return;
-    error->type = NMAP_ERROR_SYS;
-    ft_strlcpy(error->u.dns.func_fail, func_fail,
-               sizeof(error->u.dns.func_fail));
-    ft_strlcpy(error->u.dns.description, detail,
-               sizeof(error->u.dns.description));
-    error->error = errno;
-}
-
-static void icmp_error(struct nmap_error **error_ptr,
-                       struct ping_context *ctx) {
-    struct nmap_error *error;
-    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
-    if (error == NULL)
-        return;
-    error->type = NMAP_ERROR_ICMP;
-    error->error = 0;
-    error->u.icmp.iphdr = ctx->packet.buffer.iphdr;
-    error->u.icmp.icmphdr = ctx->packet.buffer.icmp.icmphdr;
-    if (ctx->packet.len >= 2 * sizeof(struct iphdr) + sizeof(struct icmphdr))
-        error->u.icmp.org_iphdr =
-            *(struct iphdr *)&ctx->packet.buffer.icmp.payload;
-    if (ctx->packet.len >=
-        2 * sizeof(struct iphdr) + sizeof(struct icmphdr) + 8)
-        memcpy(&error->u.icmp.detail,
-               ctx->packet.buffer.icmp.payload + sizeof(struct iphdr), 8);
-}
+void nmap_sys_error(struct nmap_error **error_ptr, const char *func_fail,
+                    const char *detail);
+void nmap_icmp_error(struct nmap_error **error_ptr, struct packet *packet);
 
 int ping_init(struct task_handle *data);
 int ping_packet_send(struct task_handle *data);
@@ -103,7 +74,7 @@ static int send_syn(struct task_handle *data) {
 
     ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
-        sys_error(data->error, "send", "sending tcp syn");
+        nmap_sys_error(data->error, "send", "sending tcp syn");
         data->flags.error = 1;
         return (1);
     } else if (ret == 0 || (size_t)ret != ctx->packet.len) {
@@ -133,7 +104,7 @@ static int send_echo(struct task_handle *data) {
 
     ret = send(data->sock_icmp.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
-        sys_error(data->error, "send", "sending icmp echo");
+        nmap_sys_error(data->error, "send", "sending icmp echo");
         data->flags.error = 1;
         return (1);
     } else if (ret == 0 || (size_t)ret != ctx->packet.len) {
@@ -165,7 +136,7 @@ static int rcv_packet(struct task_handle *data, struct pollfd poll) {
         ret = rcv_packet_msg(poll.fd, &ctx->packet, &iovec, 0);
     }
     if (ret < 0) {
-        sys_error(data->error, "recv", "reading incoming packet");
+        nmap_sys_error(data->error, "recv", "reading incoming packet");
         data->flags.error = 1;
         return (1);
     } else if (ret == 0) {
@@ -215,7 +186,7 @@ static int handle_packet_rcv(struct task_handle *data) {
         case ICMP_TIME_EXCEEDED:
             data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
             data->io_data.ping.rslt->reason.type = REASON_TIME_EXCEEDED;
-            icmp_error(data->error, ctx);
+            nmap_icmp_error(data->error, &ctx->packet);
             return (1);
         case ICMP_DEST_UNREACH:
             data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
@@ -233,7 +204,7 @@ static int handle_packet_rcv(struct task_handle *data) {
         default:
             data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
             data->io_data.ping.rslt->reason.type = REASON_UNKNOWN;
-            icmp_error(data->error, ctx);
+            nmap_icmp_error(data->error, &ctx->packet);
             return (1);
         }
         break;
@@ -249,7 +220,7 @@ static int handle_packet_rcv(struct task_handle *data) {
 int ping_init(struct task_handle *data) {
     data->ctx = calloc(1, sizeof(struct ping_context));
     if (data->ctx == NULL) {
-        sys_error(data->error, "allocating task context", "");
+        nmap_sys_error(data->error, "allocating task context", "");
         data->io_data.ping.rslt->reason.type = REASON_ERROR;
         data->flags.error = 1;
         data->flags.cancelled = 1;
@@ -267,7 +238,7 @@ int ping_init(struct task_handle *data) {
             data->flags.cancelled = 1;
             /* FALLTHRU */
         case -2:
-            sys_error(data->error, "opening eph socket", "");
+            nmap_sys_error(data->error, "opening eph socket", "");
             data->io_data.ping.rslt->reason.type = REASON_ERROR;
             data->flags.error = 1;
             data->flags.done = 1;
@@ -283,8 +254,8 @@ int ping_init(struct task_handle *data) {
     case -2:
         if (data->sock_eph.fd >= 0)
             close(data->sock_eph.fd);
-        sys_error(data->error, "opening icmp socket",
-                  inet_ntoa(data->io_data.ping.daddr));
+        nmap_sys_error(data->error, "opening icmp socket",
+                       inet_ntoa(data->io_data.ping.daddr));
         data->io_data.ping.rslt->reason.type = REASON_ERROR;
         data->flags.error = 1;
         free(data->ctx);
@@ -303,8 +274,8 @@ int ping_init(struct task_handle *data) {
             close(data->sock_eph.fd);
         if (data->sock_icmp.fd >= 0)
             close(data->sock_icmp.fd);
-        sys_error(data->error, "opening tcp socket",
-                  inet_ntoa(data->io_data.ping.daddr));
+        nmap_sys_error(data->error, "opening tcp socket",
+                       inet_ntoa(data->io_data.ping.daddr));
         data->io_data.ping.rslt->reason.type = REASON_ERROR;
         data->flags.error = 1;
         free(data->ctx);

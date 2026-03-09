@@ -35,6 +35,11 @@ int tcp_packet_rcv(struct task_handle *data, struct pollfd sock);
 int tcp_init(struct task_handle *data);
 int tcp_packet_timeout(struct task_handle *data);
 int tcp_release(struct task_handle *data);
+int udp_packet_send(struct task_handle *data);
+int udp_packet_rcv(struct task_handle *data, struct pollfd sock);
+int udp_init(struct task_handle *data);
+int udp_packet_timeout(struct task_handle *data);
+int udp_release(struct task_handle *data);
 
 struct host *check_double_host(struct host *vec_hosts, struct host *host);
 
@@ -203,6 +208,13 @@ static void confirm_task(struct task_handle *task) {
         scan->remaining -= task->io_data.tcp.nbr_port;
         host->state = STATE_SCAN_RUNNING;
         break;
+    case SCAN_UDP:
+        for (uint16_t i = 0; i < task->io_data.udp.nbr_port; i++) {
+            task->io_data.udp.ports[i].state = PORT_SCANNING;
+        }
+        scan->remaining -= task->io_data.udp.nbr_port;
+        host->state = STATE_SCAN_RUNNING;
+        break;
 
     default:
         host->state = STATE_SCAN_RUNNING;
@@ -252,10 +264,23 @@ static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
         task->sock_main = (struct sock_instance){.fd = -1};
         break;
 
-    case SCAN_CONNECT:
-        break;
-
     case SCAN_UDP:
+        task->io_data.udp.ports =
+            assign_multiple_port(&task->io_data.udp.nbr_port, scan, opts);
+        task->init = udp_init;
+        task->packet_send = udp_packet_send;
+        task->packet_rcv = udp_packet_rcv;
+        task->packet_timeout = udp_packet_timeout;
+        task->release = udp_release;
+        task->timeout = task->base_timeout = timeout;
+        task->io_data.udp.daddr = task->host->addr.sin_addr;
+        task->io_data.ping.saddr = (struct sockaddr_in){0};
+        *nbr_socket += 1;
+        task->sock_eph.fd = -1;
+        task->sock_icmp = (struct sock_instance){.fd = -1};
+        task->sock_main = (struct sock_instance){.fd = -1};
+        break;
+    case SCAN_CONNECT:
         break;
     default:
         break;
@@ -430,6 +455,7 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     case SCAN_NULL:
     case SCAN_FIN:
     case SCAN_XMAS:
+    case SCAN_UDP:
         for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
             port = &task.io_data.tcp.ports[i];
             if (++port->retries >= MAX_RETRIES) {
@@ -447,10 +473,6 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
         break;
 
     default:
-
-        if (--scan->assigned_worker == 0) {
-            task.host->current_scan.ping = 0;
-        }
         break;
     }
     ret = switch_state(task.host);
@@ -516,6 +538,8 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         case REASON_PORT_UNREACH:
         case REASON_TIME_EXCEEDED:
             task.host->state = STATE_DOWN;
+            update_host_rtt(&task.host->stats,
+                            scan->ports[available_port].reason.rtt);
             break;
 
         case REASON_ERROR:
@@ -535,13 +559,16 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_NULL:
     case SCAN_FIN:
     case SCAN_XMAS:
+    case SCAN_UDP:
         task.host->stats.last_max_rtt = 0.f; // reset rtt
         for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
-            if (task.io_data.tcp.ports[i].reason.rtt <= 0.f)
+            if (task.io_data.tcp.ports[i].reason.rtt < 0.f)
                 continue;
             update_host_rtt(&task.host->stats,
                             task.io_data.tcp.ports[i].reason.rtt);
         }
+        if (task.host->stats.last_max_rtt == 0.f)
+            task.host->stats.last_max_rtt = task.host->stats.mean_rtt;
         if (opts->verbose > 1)
             printf("Host %s rtt: %.2f\n", task.host->hostname,
                    task.host->stats.last_max_rtt);

@@ -19,6 +19,10 @@ struct packet {
                     char payload[];
                 } tcp;
                 struct {
+                    struct udphdr udphdr;
+                    char payload[];
+                } udp;
+                struct {
                     struct icmphdr icmphdr;
                     char payload[];
                 } icmp;
@@ -38,7 +42,7 @@ struct pseudo_iphdr {
     uint32_t daddr;
     uint8_t reserved;
     uint8_t protocol;
-    uint16_t tcp_len;
+    uint16_t len;
 } __attribute__((packed));
 
 struct tcp_params {
@@ -57,15 +61,17 @@ void init_tcphdr(struct tcphdr *hdr, struct tcp_params data);
 void init_icmphdr(struct icmphdr *hdr, uint8_t type, uint16_t id, uint16_t seq);
 void calc_tcp_sum_pkt(char *buffer, size_t total_len);
 void calc_icmp_sum_pkt(char *buffer, size_t total_len);
+void calc_udp_sum_pkt(char *buffer, size_t total_len);
 void calc_icmp_checksum(struct icmphdr *hdr, size_t icmp_len);
 void calc_tcp_checksum(struct tcphdr *tcp, struct pseudo_iphdr *ph);
 void calc_ip_checksum(struct iphdr *hdr);
-void calc_udp_checksum(struct udphdr *hdr, size_t udp_len);
+void calc_udp_checksum(struct udphdr *udp, struct pseudo_iphdr *ph);
 
 void print_verbose_ip(struct iphdr *iphdr, unsigned int padding);
 void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size,
                         unsigned int padding);
 void print_verbose_tcp(struct tcphdr *tcphdr, unsigned int padding);
+void print_verbose_udp(struct tcphdr *udphdr, unsigned int padding);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
 void print_packet_short(const char *buffer, const char *hdr);

@@ -25,7 +25,7 @@ void calc_udp_sum_pkt(char *buffer, size_t total_len);
 void calc_icmp_checksum(struct icmphdr *hdr, size_t icmp_len);
 void calc_tcp_checksum(struct tcphdr *tcp, struct pseudo_iphdr *ph);
 void calc_ip_checksum(struct iphdr *hdr);
-void calc_udp_checksum(struct udphdr *hdr, size_t udp_len);
+void calc_udp_checksum(struct udphdr *udp, struct pseudo_iphdr *ph);
 
 static uint8_t char_to_hex(char c) {
     if (c >= '0' && c <= '9')
@@ -198,7 +198,7 @@ void calc_tcp_checksum(struct tcphdr *tcp, struct pseudo_iphdr *ph) {
     tcp->th_sum = 0;
 
     sum = checksum_add(sum, (const char *)ph, sizeof(*ph));
-    sum = checksum_add(sum, (const char *)tcp, ntohs(ph->tcp_len));
+    sum = checksum_add(sum, (const char *)tcp, ntohs(ph->len));
 
     while (sum >> 16)
         sum = (sum & 0xFFFF) + (sum >> 16);
@@ -206,14 +206,23 @@ void calc_tcp_checksum(struct tcphdr *tcp, struct pseudo_iphdr *ph) {
     tcp->th_sum = (uint16_t)~sum;
 }
 
+void calc_udp_checksum(struct udphdr *udp, struct pseudo_iphdr *ph) {
+    uint32_t sum = 0;
+
+    udp->uh_sum = 0;
+
+    sum = checksum_add(sum, (const char *)ph, sizeof(*ph));
+    sum = checksum_add(sum, (const char *)udp, ntohs(ph->len));
+
+    while (sum >> 16)
+        sum = (sum & 0xFFFF) + (sum >> 16);
+
+    udp->uh_sum = (uint16_t)~sum;
+}
+
 void calc_ip_checksum(struct iphdr *hdr) {
     hdr->check = 0;
     hdr->check = calc_checksum((char *)hdr, sizeof(struct iphdr));
-}
-
-void calc_udp_checksum(struct udphdr *hdr, size_t udp_len) {
-    hdr->check = 0;
-    hdr->check = calc_checksum((char *)hdr, udp_len);
 }
 
 /// @brief Compute iphdr + tcphdr checksum, pseudo_iphdr is filled based on
@@ -224,13 +233,13 @@ void calc_tcp_sum_pkt(char *buffer, size_t total_len) {
     struct iphdr *iphdr = (struct iphdr *)buffer;
     struct tcphdr *tcphdr = (struct tcphdr *)(buffer + sizeof(struct iphdr));
 
-    calc_tcp_checksum(tcphdr,
-                      &(struct pseudo_iphdr){
-                          .tcp_len = htons(total_len - sizeof(struct iphdr)),
-                          .saddr = iphdr->saddr,
-                          .daddr = iphdr->daddr,
-                          .protocol = IPPROTO_TCP,
-                          .reserved = 0});
+    calc_tcp_checksum(
+        tcphdr,
+        &(struct pseudo_iphdr){.len = htons(total_len - sizeof(struct iphdr)),
+                               .saddr = iphdr->saddr,
+                               .daddr = iphdr->daddr,
+                               .protocol = IPPROTO_TCP,
+                               .reserved = 0});
     calc_ip_checksum(iphdr);
 }
 
@@ -246,7 +255,13 @@ void calc_udp_sum_pkt(char *buffer, size_t total_len) {
     struct iphdr *iphdr = (struct iphdr *)buffer;
     struct udphdr *udphdr = (struct udphdr *)(buffer + sizeof(struct iphdr));
 
-    calc_udp_checksum(udphdr, total_len - sizeof(struct iphdr));
+    calc_udp_checksum(
+        udphdr,
+        &(struct pseudo_iphdr){.len = htons(total_len - sizeof(struct iphdr)),
+                               .saddr = iphdr->saddr,
+                               .daddr = iphdr->daddr,
+                               .protocol = IPPROTO_UDP,
+                               .reserved = 0});
     calc_ip_checksum(iphdr);
 }
 

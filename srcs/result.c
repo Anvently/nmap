@@ -4,7 +4,7 @@
 #include <netinet/ip.h>
 #include <nmap.h>
 
-extern const char *reason_strings[12];
+extern const char *reason_strings[13];
 extern const char *host_state_strings[14];
 extern const char *scan_type_strings[11];
 extern const char *port_state_strings[9];
@@ -49,24 +49,30 @@ void print_task_result(struct task_handle *task) {
             print_nmap_error(*task->error);
         }
         break;
-    default:
-        if (task->scan_type >= SCAN_SYN && task->scan_type <= SCAN_XMAS) {
-            printf("%s scan result for host %s (%hu ports): ",
-                   scan_type_strings[task->scan_type], task->host->hostname,
-                   task->io_data.tcp.nbr_port);
-            for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
-                printf("%hu (%s, %s", task->io_data.tcp.ports[i].port,
-                       port_state_strings[task->io_data.tcp.ports[i].state],
-                       reason_strings[task->io_data.tcp.ports[i].reason.type]);
-                if (task->io_data.tcp.ports[i].reason.rtt > 0.f)
-                    printf(", %.2f", task->io_data.tcp.ports[i].reason.rtt);
-                printf("), ");
-            }
+    case SCAN_SYN:
+    case SCAN_ACK:
+    case SCAN_NULL:
+    case SCAN_FIN:
+    case SCAN_XMAS:
+    case SCAN_UDP:
+        printf("%s scan result for host %s (%hu ports): ",
+               scan_type_strings[task->scan_type], task->host->hostname,
+               task->io_data.tcp.nbr_port);
+        for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
+            printf("%hu (%s, %s", task->io_data.tcp.ports[i].port,
+                   port_state_strings[task->io_data.tcp.ports[i].state],
+                   reason_strings[task->io_data.tcp.ports[i].reason.type]);
+            if (task->io_data.tcp.ports[i].reason.rtt > 0.f)
+                printf(", %.2f", task->io_data.tcp.ports[i].reason.rtt);
+            printf("), ");
         }
         if (*task->error) {
             printf("=> ");
             print_nmap_error(*task->error);
         }
+        break;
+
+    default:
         break;
     }
     printf("\n");

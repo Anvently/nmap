@@ -2,6 +2,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <nmap.h>
 #include <string.h>
 #include <syscall.h>
@@ -11,7 +12,7 @@ struct pseudo_iphdr {
     uint32_t daddr;
     uint8_t reserved;
     uint8_t protocol;
-    uint16_t tcp_len;
+    uint16_t len;
 };
 
 const char *host_state_strings[] = {
@@ -48,6 +49,7 @@ const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
                                 [REASON_PORT_UNREACH] = "port unreachable",
                                 [REASON_HOST_UNREACH] = "host unreachable",
                                 [REASON_UNREACH] = "destination unreachable",
+                                [REASON_UDP_RESPONSE] = "udp-response",
                                 [REASON_CONN_REFUSED] = "connection refused",
                                 [REASON_USER_INPUT] = "user input",
                                 [REASON_NO_RESPONSE] = "no response",
@@ -87,6 +89,7 @@ void print_verbose_ip(struct iphdr *iphdr, unsigned int padding);
 void print_verbose_icmp(struct icmphdr *icmp_hdr, size_t size,
                         unsigned int padding);
 void print_verbose_tcp(struct tcphdr *tcphdr, unsigned int padding);
+void print_verbose_udp(struct udphdr *udphdr, unsigned int padding);
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr);
 void print_verbose_packet(const char *buffer, size_t len);
 static void _print_verbose_packet_pad(const char *buffer, size_t len,
@@ -158,6 +161,7 @@ void print_task(struct task_handle *task) {
     case SCAN_SYN:
     case SCAN_XMAS:
     case SCAN_FIN:
+    case SCAN_UDP:
         printf("[");
         for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
             struct port_info *port = &task->io_data.tcp.ports[i];
@@ -166,6 +170,7 @@ void print_task(struct task_handle *task) {
         }
         printf("]");
         break;
+
     default:
         break;
     }
@@ -279,6 +284,17 @@ void print_verbose_tcp(struct tcphdr *tcphdr, unsigned int padding) {
            ntohs(tcphdr->window), ntohs(tcphdr->check), ntohs(tcphdr->urg_ptr));
 }
 
+void print_verbose_udp(struct udphdr *udphdr, unsigned int padding) {
+    printf("%2$*1$sUDP Hdr Dump:\n%2$*1$s", padding, "");
+    for (unsigned int i = 0; i < sizeof(struct udphdr); i += 2)
+        printf(" %04x", ntohs(*((uint16_t *)((char *)udphdr + i))));
+    printf("\n%*s  Src   Dst   Len  cks\n"
+           "%*s%5hu %5hu %04hx %04hx\n",
+           padding, "", padding, "", ntohs(udphdr->uh_sport),
+           ntohs(udphdr->uh_dport), ntohs(udphdr->uh_ulen),
+           ntohs(udphdr->uh_sum));
+}
+
 void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr) {
     struct in_addr saddr = {.s_addr = iphdr->saddr};
     struct in_addr daddr = {.s_addr = iphdr->daddr};
@@ -288,7 +304,7 @@ void print_verbose_pseudo_iphdr(struct pseudo_iphdr *iphdr) {
     printf("\nSrc           Dest           Pro  TCP-len\n%-13s ",
            inet_ntoa(saddr));
     printf("%13s %02hhx   %04hx\n", inet_ntoa(daddr), iphdr->protocol,
-           ntohs(iphdr->tcp_len));
+           ntohs(iphdr->len));
 }
 
 static void _print_verbose_packet_pad(const char *buffer, size_t len,
@@ -302,11 +318,15 @@ static void _print_verbose_packet_pad(const char *buffer, size_t len,
     } else if (((struct iphdr *)buffer)->protocol == IPPROTO_ICMP) {
         print_verbose_icmp((struct icmphdr *)(buffer + sizeof(struct iphdr)),
                            len - sizeof(struct iphdr), padding + 2);
+    } else if (((struct iphdr *)buffer)->protocol == IPPROTO_UDP) {
+        print_verbose_udp((struct udphdr *)(buffer + sizeof(struct iphdr)),
+                          padding + 2);
     }
 }
 
 static void _print_icmp_org_packet(const struct iphdr *iphdr, int padding) {
     const struct tcphdr *tcphdr = (const struct tcphdr *)(iphdr + 1);
+    const struct udphdr *udphdr = (const struct udphdr *)(iphdr + 1);
     const struct icmphdr *icmphdr = (const struct icmphdr *)(iphdr + 1);
     switch (iphdr->protocol) {
     case IPPROTO_ICMP:
@@ -331,10 +351,19 @@ static void _print_icmp_org_packet(const struct iphdr *iphdr, int padding) {
         printf("%*sTCP %s:%hu > ", padding, "",
                inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}),
                ntohs(tcphdr->th_sport));
-        printf("%s:%hu ttl=%hhu id=%hu iplen=%hu seq=%u \n",
+        printf("%s:%hu ttl=%hhu id=%hu iplen=%hu seq=%u\n",
                inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
                ntohs(tcphdr->th_dport), iphdr->ttl, ntohs(iphdr->id),
                ntohs(iphdr->tot_len), ntohl(tcphdr->seq));
+        break;
+    case IPPROTO_UDP:
+        printf("%*sUDP %s:%hu > ", padding, "",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}),
+               ntohs(udphdr->uh_sport));
+        printf("%s:%hu ttl=%hhu id=%hu iplen=%hu\n",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
+               ntohs(udphdr->uh_dport), iphdr->ttl, ntohs(iphdr->id),
+               ntohs(iphdr->tot_len));
         break;
     default:
         printf("UNSUPPORTED PROTOCOL");
@@ -350,6 +379,8 @@ static void _print_packet_short(const char *buffer, const char *hdr,
     const struct iphdr *iphdr = (const struct iphdr *)buffer;
     const struct tcphdr *tcphdr =
         (const struct tcphdr *)(buffer + sizeof(*iphdr));
+    const struct udphdr *udphdr =
+        (const struct udphdr *)(buffer + sizeof(*iphdr));
     const struct icmphdr *icmphdr =
         (const struct icmphdr *)(buffer + sizeof(*iphdr));
     int padding;
@@ -398,6 +429,15 @@ static void _print_packet_short(const char *buffer, const char *hdr,
                tcphdr->urg ? 'U' : 0, iphdr->ttl, ntohs(iphdr->id),
                ntohs(iphdr->tot_len), ntohl(tcphdr->seq),
                ntohs(tcphdr->th_win));
+        break;
+    case IPPROTO_UDP:
+        printf("UDP %s:%hu > ",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->saddr}),
+               ntohs(udphdr->uh_sport));
+        printf("%s:%hu ttl=%hhu id=%hu iplen=%hu\n",
+               inet_ntoa((struct in_addr){.s_addr = iphdr->daddr}),
+               ntohs(udphdr->uh_dport), iphdr->ttl, ntohs(iphdr->id),
+               ntohs(iphdr->tot_len));
         break;
     default:
         printf("UNSUPPORTED PROTOCOL");

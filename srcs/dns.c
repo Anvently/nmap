@@ -19,19 +19,8 @@ static bool is_valid_ipv4(const char *hostname) {
     return (result != 0);
 }
 
-static void dns_error(struct nmap_error **error_ptr, const char *func_fail,
-                      const char *detail) {
-    struct nmap_error *error;
-    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
-    if (error == NULL)
-        return;
-    error->type = NMAP_ERROR_DNS;
-    ft_strlcpy(error->u.dns.func_fail, func_fail,
-               sizeof(error->u.dns.func_fail));
-    ft_strlcpy(error->u.dns.description, detail,
-               sizeof(error->u.dns.description));
-    error->error = errno;
-}
+void nmap_dns_error(struct nmap_error **error_ptr, const char *func_fail,
+                    const char *detail);
 
 static int get_ip_name(struct sockaddr_in *addr, char **rslt,
                        struct nmap_error **error_ptr) {
@@ -40,7 +29,7 @@ static int get_ip_name(struct sockaddr_in *addr, char **rslt,
     ret = getnameinfo((struct sockaddr *)addr, sizeof(*addr), *rslt, 128, NULL,
                       0, 0);
     if (ret) {
-        dns_error(error_ptr, "getnameinfo", gai_strerror(ret));
+        nmap_dns_error(error_ptr, "getnameinfo", gai_strerror(ret));
         free(*rslt);
         *rslt = NULL;
         return (1);
@@ -61,7 +50,7 @@ static int fill_addr_info(const char *hostname, struct sockaddr_in *rslt,
     struct addrinfo *res;
     ret = getaddrinfo(hostname, NULL, &hints, &res);
     if (ret != 0) {
-        dns_error(error_ptr, "getaddrinfo", gai_strerror(ret));
+        nmap_dns_error(error_ptr, "getaddrinfo", gai_strerror(ret));
         return (1);
     }
     *rslt = *(struct sockaddr_in *)res->ai_addr;

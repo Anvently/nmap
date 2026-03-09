@@ -192,6 +192,7 @@ enum result_reason {
     REASON_PORT_UNREACH,
     REASON_HOST_UNREACH,
     REASON_UNREACH,
+    REASON_UDP_RESPONSE,
     REASON_CONN_REFUSED,
     REASON_USER_INPUT,
     REASON_NO_RESPONSE,
@@ -265,7 +266,7 @@ struct ping_data {
     struct port_info *rslt;   // SINGLE PORT
 };
 
-struct tcp_data {             // Used by SYN, ACK, NULL, XMAS, FIN
+struct tcp_udp_data {         // Used by SYN, ACK, NULL, XMAS, FIN
     struct in_addr daddr;     // peer address
     struct sockaddr_in saddr; // tcp
     struct port_info
@@ -279,16 +280,19 @@ struct connect_data {
 };
 
 struct udp_data {
-    struct in_addr daddr; // peer address
-    struct port_info *port;
+    struct in_addr daddr;     // peer address
+    struct sockaddr_in saddr; // tcp
+    struct port_info
+        *ports; // Portion of port_info vector (this portion will be sorted)
+    uint16_t nbr_port; // Number of port scanned
 };
 
 union task_data {
     struct dns_data dns;
     struct ping_data ping;
-    struct tcp_data tcp;
+    struct tcp_udp_data tcp;
+    struct tcp_udp_data udp;
     struct connect_data connect;
-    struct udp_data udp;
 };
 
 struct sock_instance {
