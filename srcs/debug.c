@@ -181,17 +181,12 @@ void print_scan_state(struct scan_result *scan) {
     if (scan->type > SCAN_DNS)
         printf(", %hu/%hu port", (scan->nbr_port - scan->remaining),
                scan->nbr_port);
-    if (scan->nbr_port < 2 && scan->ports &&
-        scan->ports->reason.type != REASON_UNKNOWN)
-        printf(", reason = %s (%hhu) (ttl = %hhu)",
-               reason_strings[scan->ports->reason.type],
-               scan->ports->reason.type, scan->ports->reason.ttl);
     printf("\n");
 }
 
 static void print_host_rtt(struct host_stats *stat) {
-    printf("nbr=%u|min=%.2f|max=%.2f|mean=%.2f\n", stat->total, stat->min_rtt,
-           stat->max_rtt, stat->mean_rtt);
+    printf("nbr=%u|min=%.2f|max=%.2f|mean=%.2f|last=%.2f\n", stat->total,
+           stat->min_rtt, stat->max_rtt, stat->mean_rtt, stat->last_max_rtt);
 }
 
 void print_host(struct host *host) {

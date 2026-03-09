@@ -55,8 +55,12 @@ void print_task_result(struct task_handle *task) {
                    scan_type_strings[task->scan_type], task->host->hostname,
                    task->io_data.tcp.nbr_port);
             for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
-                printf("%hu (%s), ", task->io_data.tcp.ports[i].port,
-                       port_state_strings[task->io_data.tcp.ports[i].state]);
+                printf("%hu (%s, %s", task->io_data.tcp.ports[i].port,
+                       port_state_strings[task->io_data.tcp.ports[i].state],
+                       reason_strings[task->io_data.tcp.ports[i].reason.type]);
+                if (task->io_data.tcp.ports[i].reason.rtt > 0.f)
+                    printf(", %.2f", task->io_data.tcp.ports[i].reason.rtt);
+                printf("), ");
             }
         }
         if (*task->error) {
@@ -86,13 +90,13 @@ void print_port(struct port_info *port, enum scan_type type, t_options *opts) {
                                   opts->services_vec)); // service empty for now
         padding = 16 - (ret - padding);
     }
-    if (opts->reason || opts->verbose > 0) {
+    if (opts->verbose > 0) {
         ret = printf("%*s%s", padding, "", reason_strings[port->reason.type]);
         if (port->reason.ttl)
             ret += printf(" ttl %hhu", port->reason.ttl);
         if (port->reason.rtt)
             ret += printf(" rtt %.2f", port->reason.rtt);
-        padding = 16 - (ret - padding);
+        padding = 24 - (ret - padding);
     }
     if (opts->verbose > 0 && port->error) {
         printf("%*s", padding, "");
@@ -105,8 +109,8 @@ void print_ports(struct scan_result *scan, t_options *opts) {
     printf("%-10s%-16s", "PORT", "STATE");
     if (opts->no_service == false)
         printf("%-16s", "SERVICE");
-    if (opts->reason || opts->verbose > 0)
-        printf("%-16s", "REASON");
+    if (opts->verbose > 0)
+        printf("%-24s", "REASON");
     if (opts->verbose > 0)
         printf("ERROR");
     printf("\n");

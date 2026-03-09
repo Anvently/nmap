@@ -93,6 +93,8 @@ int socket_open_tcp(t_options *opts, struct in_addr daddr,
 static void resolve_state(struct tcp_context *ctx, enum scan_type scan_type,
                           struct port_info *port);
 
+float timeval_to_ms(struct timeval tv);
+
 int tcp_init(struct task_handle *data) {
     data->ctx = calloc(1, sizeof(struct tcp_context));
     if (data->ctx == NULL) {
@@ -169,7 +171,7 @@ int tcp_packet_timeout(struct task_handle *data) {
         }
         port_info->reason.type = REASON_NO_RESPONSE;
         port_info->reason.ttl = 0; // ttl is time out
-        port_info->reason.rtt = 0.f;
+        port_info->reason.rtt = timeval_to_ms(data->base_timeout);
         resolve_state((struct tcp_context *)data->ctx, data->scan_type,
                       port_info);
     }
@@ -429,7 +431,7 @@ static struct port_info *demul_packet(struct task_handle *data) {
             print_nmap_error(*data->error);
             printf("Rtt factor is probably too small, try again with "
                    "--rtt-timeout=%f\n",
-                   data->opts->rtt_timeout * 1.5f);
+                   data->opts->rtt_factor * 1.5f);
             free(*data->error);
             *data->error = NULL;
         }

@@ -28,7 +28,8 @@ struct ping_context {
         ICMPSTATE_RCV, // Never set
     } icmp_state;
     size_t pattern_idx; // Idx where pattern start (or headers end)
-    struct timeval send_stamp;
+    struct timeval send_stamp_syn;
+    struct timeval send_stamp_echo;
     struct packet packet;
 };
 
@@ -184,7 +185,7 @@ static int handle_packet_rcv(struct task_handle *data) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
     uint8_t proto = ctx->packet.buffer.iphdr.protocol;
     data->io_data.ping.rslt->reason.rtt =
-        compute_rtt(ctx->send_stamp, ctx->packet.stamp);
+        compute_rtt(ctx->send_stamp_syn, ctx->packet.stamp);
 
     switch (proto) {
     case IPPROTO_TCP:
@@ -202,11 +203,12 @@ static int handle_packet_rcv(struct task_handle *data) {
     case IPPROTO_ICMP:
         switch (ctx->packet.buffer.icmp.icmphdr.type) {
         case ICMP_ECHO:
-            break;
         case ICMP_TIMESTAMP:
             break;
         case ICMP_ECHOREPLY:
         case ICMP_TIMESTAMPREPLY:
+            data->io_data.ping.rslt->reason.rtt =
+                compute_rtt(ctx->send_stamp_echo, ctx->packet.stamp);
             data->io_data.ping.rslt->reason.type = REASON_ICMP_REPLY;
             data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
             return (1);
@@ -327,9 +329,9 @@ int ping_packet_send(struct task_handle *data) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
     switch (ctx->tcp_state) {
     case TCPSTATE_START: // SEND tcp syn
+        gettimeofday(&ctx->send_stamp_syn, NULL);
         if (send_syn(data))
             return (1);
-        gettimeofday(&ctx->send_stamp, NULL);
         if (data->opts->trace_packet)
             print_packet_short(ctx->packet.buffer.raw, "SND");
         ctx->tcp_state = TCPSTATE_SYN_SENT;
@@ -354,9 +356,9 @@ int ping_packet_send(struct task_handle *data) {
 
     switch (ctx->icmp_state) {
     case ICMPSTATE_START: // SEND icmp echo
+        gettimeofday(&ctx->send_stamp_echo, NULL);
         if (send_echo(data))
             return (1);
-        gettimeofday(&ctx->send_stamp, NULL);
         if (data->opts->trace_packet)
             print_packet_short(ctx->packet.buffer.raw, "SND");
         data->flags.send_state = 1;

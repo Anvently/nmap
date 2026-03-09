@@ -12,6 +12,8 @@ void update_host_rtt(struct host_stats *stat, float rtt) {
     float delta1, delta2;
     if (rtt > 0 && stat->min_rtt > rtt)
         stat->min_rtt = rtt;
+    if (rtt > 0 && stat->last_max_rtt < rtt)
+        stat->last_max_rtt = rtt;
     if (rtt > 0 && stat->max_rtt < rtt)
         stat->max_rtt = rtt;
     stat->total += 1;
@@ -19,6 +21,10 @@ void update_host_rtt(struct host_stats *stat, float rtt) {
     stat->mean_rtt += delta1 / stat->total;
     delta2 = rtt - stat->mean_rtt;
     stat->M2 += delta1 * delta2;
+}
+
+float timeval_to_ms(struct timeval tv) {
+    return ((float)(tv.tv_sec) * 1000.f + ((tv.tv_usec / 1000.f)));
 }
 
 /* static float get_stddev(t_ping_score *score) {

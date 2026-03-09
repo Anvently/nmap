@@ -279,6 +279,7 @@ ssize_t rcv_packet_msg(int fd, struct packet *pkt, struct iovec *iovec,
                 // too small), MSG_ERRQUEUE (something to read in ERR queue)
     ssize_t ret;
 
+    bzero(&pkt->stamp, sizeof(struct timeval));
     ret = recvmsg(fd, &mhdr, flags);
     if (ret <= 0)
         return (ret);

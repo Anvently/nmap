@@ -47,9 +47,10 @@ static int cmp(void *a, void *b) {
 }
 
 static struct port_info *assign_multiple_port(uint16_t *nbr_port,
-                                              struct scan_result *scan) {
+                                              struct scan_result *scan,
+                                              t_options *opts) {
     uint16_t nbr = 0, i = 0;
-    for (; i < scan->nbr_port && nbr < MAX_PORT_TASK; i++) {
+    for (; i < scan->nbr_port && nbr < opts->sim_ports; i++) {
         if (scan->ports[i].state !=
             PORT_UNKNOWN) { // @warning: ATOMIC OPERATION
             if (nbr == 0)
@@ -218,7 +219,10 @@ static void confirm_task(struct task_handle *task) {
 static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
                              unsigned int *nbr_socket, t_options *opts) {
     (void)opts;
-    float ftimeout = task->host->stats.mean_rtt * opts->rtt_timeout;
+    float ftimeout = task->host->stats.last_max_rtt * opts->rtt_factor;
+    if (ftimeout > opts->rtt_max)
+        ftimeout = opts->rtt_max;
+
     struct timeval timeout;
     timeout.tv_sec = (time_t)(ftimeout / 1000.f);
     timeout.tv_usec =
@@ -233,7 +237,7 @@ static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
     case SCAN_FIN:
     case SCAN_XMAS:
         task->io_data.tcp.ports =
-            assign_multiple_port(&task->io_data.tcp.nbr_port, scan);
+            assign_multiple_port(&task->io_data.tcp.nbr_port, scan, opts);
         task->init = tcp_init;
         task->packet_send = tcp_packet_send;
         task->packet_rcv = tcp_packet_rcv;
@@ -393,25 +397,6 @@ static bool check_hosts_done(struct host *vec_hosts) {
     return (true);
 }
 
-/* Main loop
-1. If worker < MAX_WORKER : find an available host (state >= 3 && state <
-12)
-2. If host
-    - allocate and initialize tasks for workers
-        - if UDP scan enabled and not done :
-            - assign MAX_TASK_WORKER - other_task? - remaining_udp_port
-        - else:
-            - assign a single task
-    - create a worker with tasks assigned
-3. Non-blocking join :
-    - if join, decrement worker, and update host state.
-        - if -vv is one, prints task result
-    - if a scan is done and -v, prints it
-    - if a host is done, prints it
-    - if all state done, break loop
-
-*/
-
 static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     struct scan_result *scan;
     uint16_t available_port;
@@ -475,12 +460,6 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     }
     if (ret && opts->verbose)
         print_host_result(task.host, opts);
-    // if (task.host->state != STATE_ERROR && *task.error) {
-    //     free(*task.error);
-    //     *task.error = NULL;
-    // }
-    // if (task.host->state == STATE_ERROR)
-    //     print_host_result(task.host, opts);
 }
 
 static void handle_task_done(struct task_handle task, struct host *vec_hosts,
@@ -489,9 +468,6 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     uint16_t available_port;
     bool ret;
 
-    // if ((task.flags.error == 1 && opts->verbose > 0) || opts->verbose >
-    // 1)
-    //     print_task_result(&task);
     scan = &task.host->scans[task.scan_type];
     if (--scan->assigned_worker == 0) {
         task.host->current_scan.int_representation &= ~(1 << scan->type);
@@ -527,6 +503,8 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
             task.host->state = STATE_UP;
             update_host_rtt(&task.host->stats,
                             scan->ports[available_port].reason.rtt);
+            task.host->stats.last_max_rtt *=
+                10.f; // First rtt is usually too fast for subsequent probes.
             break;
 
         case REASON_USER_INPUT:
@@ -557,12 +535,16 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_NULL:
     case SCAN_FIN:
     case SCAN_XMAS:
+        task.host->stats.last_max_rtt = 0.f; // reset rtt
         for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
             if (task.io_data.tcp.ports[i].reason.rtt <= 0.f)
                 continue;
             update_host_rtt(&task.host->stats,
                             task.io_data.tcp.ports[i].reason.rtt);
         }
+        if (opts->verbose > 1)
+            printf("Host %s rtt: %.2f\n", task.host->hostname,
+                   task.host->stats.last_max_rtt);
         // if (*task.error && ((*task.error)->type == NMAP_ERROR_WORKER)) {
         if (*task.error) {
             for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
@@ -700,10 +682,13 @@ init_worker(struct host *hosts_vec,
     return (worker);
 }
 
+void setup_stdin_non_block();
+
 static int main_loop(struct host *vec_hosts, t_options *opts) {
     unsigned int nbr_workers;
     struct worker_handle workers_pool[MAX_WORKER] = {0};
 
+    setup_stdin_non_block();
     while (1) {
         user_input(vec_hosts, workers_pool, opts);
         usleep(1000); // 1ms sleep

@@ -14,13 +14,15 @@
 // Default timeout for port scan when host_ping is disabled
 #define DFT_PORT_TIMEOUT 500.f
 #define DFT_PORT_TIMEOUT_FACTOR                                                \
-    20.f               // Timeout for port scan is host rtt * factor
+    2.f                    // Timeout for port scan is host last rtt * factor
+#define DFT_MAX_RTT 3000.f // Maximum rtt timeout for a single task.
+
 #define MAX_WORKER 250 // Maximum number of threads
 // Maximum number of task a worker can take
 #define MAX_TASK_WORKER 16
 // Maximum number of port a single task is able to scan (or maximum number of
 // port a single socket may interact with)
-#define MAX_PORT_TASK 16
+#define MAX_SIM_PORT 4
 #define MAX_PORT_NBR 1024U // Maximum different port nmap is allowed to scan
 #define MAX_RETRIES 3
 
@@ -44,14 +46,15 @@ enum OPTIONS {
     OPT_SEQUENTIAL,     // -r, --sequential
     OPT_FRAGMENT,       // -f, --mtu
     OPT_USURP,          // -S, --usurp
-    OPT_REASON,         // --reason
+    OPT_SIM_PORT,       // --sim-ports
     OPT_LIST,           // -L, --list
     OPT_SKIP_DISCOVERY, // --skip-ping
     OPT_SRC_PORT,       // -g, --source-port
-    OPT_NO_SERVICE,
-    OPT_TRACE_PACKET,
-    OPT_OPEN,        // --open
-    OPT_RTT_TIMEOUT, // --all
+    OPT_NO_SERVICE,     // -N
+    OPT_TRACE_PACKET,   // --trace
+    OPT_OPEN,           // --open
+    OPT_RTT_FACTOR,     // --rtt-factor
+    OPT_MAX_RTT,        // --rtt-max
 
     // CUSTOMs
     OPT_PORT,    // -p, --port
@@ -106,12 +109,13 @@ struct s_options {
         const char *arg;
         struct in_addr addr;
     } usurp;
-    bool reason;
+    uint16_t sim_ports;
     bool list;
     bool skip_discovery;
     uint16_t src_port;
     bool open;
-    float rtt_timeout;
+    float rtt_factor;
+    float rtt_max;
     const char *ports;
     uint16_t threads;
     union scan_list enabled_scan; // 1 scan = 1 bit
@@ -234,6 +238,7 @@ struct host_stats {
     float M2;
     float min_rtt;
     float max_rtt;
+    float last_max_rtt; // Maximum rtt of last task done
 };
 
 struct host {

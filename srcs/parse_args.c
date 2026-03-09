@@ -16,12 +16,13 @@ static int register_ttl(t_options *opt, char *);
 static int register_sequential(t_options *opt, char *);
 static int register_fragment(t_options *opt, char *);
 static int register_usurp(t_options *opt, char *);
-static int register_reason(t_options *opt, char *);
+static int register_sim_ports(t_options *opt, char *);
 static int register_list(t_options *opt, char *);
 static int register_skip_discovery(t_options *opt, char *);
 static int register_src_port(t_options *opt, char *);
 static int register_open(t_options *opt, char *);
 static int register_rtt_timeout_factor(t_options *opt, char *);
+static int register_rtt_max(t_options *opt, char *);
 static int register_ports(t_options *opt, char *);
 static int register_threads(t_options *opt, char *);
 static int register_scan(t_options *opt, char *);
@@ -71,10 +72,10 @@ t_opt_flag options_list[OPT_NBR] = {
                                .handler = &register_usurp,
                                .short_id = 'S',
                                .long_id = "usurp"},
-    [OPT_REASON] = (t_opt_flag){.arg = ARG_NONE,
-                                .handler = &register_reason,
-                                .short_id = 0,
-                                .long_id = "reason"},
+    [OPT_SIM_PORT] = (t_opt_flag){.arg = ARG_REQUIRED,
+                                  .handler = &register_sim_ports,
+                                  .short_id = 0,
+                                  .long_id = "sim-ports"},
     [OPT_LIST] = (t_opt_flag){.arg = ARG_NONE,
                               .handler = &register_list,
                               .short_id = 'L',
@@ -91,10 +92,14 @@ t_opt_flag options_list[OPT_NBR] = {
                               .handler = &register_open,
                               .short_id = 0,
                               .long_id = "open"},
-    [OPT_RTT_TIMEOUT] = (t_opt_flag){.arg = ARG_REQUIRED,
-                                     .handler = &register_rtt_timeout_factor,
-                                     .short_id = 0,
-                                     .long_id = "rtt-timeout"},
+    [OPT_RTT_FACTOR] = (t_opt_flag){.arg = ARG_REQUIRED,
+                                    .handler = &register_rtt_timeout_factor,
+                                    .short_id = 0,
+                                    .long_id = "rtt-factor"},
+    [OPT_MAX_RTT] = (t_opt_flag){.arg = ARG_REQUIRED,
+                                 .handler = &register_rtt_max,
+                                 .short_id = 0,
+                                 .long_id = "rtt-max"},
     [OPT_PORT] = (t_opt_flag){.arg = ARG_REQUIRED,
                               .handler = &register_ports,
                               .short_id = 'p',
@@ -216,11 +221,20 @@ static int register_usurp(t_options *opt, char *arg) {
         return (ft_options_err_invalid_argument("usurp", arg, NULL));
     return (0);
 }
-static int register_reason(t_options *opt, char *arg) {
-    (void)arg;
-    (void)opt;
-    opt->reason = true;
-    return (0);
+static int register_sim_ports(t_options *opt, char *arg) {
+    unsigned long rslt = 0;
+    int ret = 0;
+
+    ret = ft_strtoul_base(arg, &rslt, NULL, "0123456789");
+    if (rslt > UINT16_MAX)
+        ret = 1;
+    if (ret != 0)
+        ft_options_err_invalid_argument("sim-ports", arg, NULL);
+    else {
+        opt->sim_ports = (uint16_t)rslt;
+        return (0);
+    }
+    return (2);
 }
 static int register_list(t_options *opt, char *arg) {
     (void)arg;
@@ -256,12 +270,23 @@ static int register_open(t_options *opt, char *arg) {
     return (0);
 }
 static int register_rtt_timeout_factor(t_options *opt, char *arg) {
-    if (ft_strtof(arg, &opt->rtt_timeout, NULL)) {
+    if (ft_strtof(arg, &opt->rtt_factor, NULL)) {
         ft_options_err_invalid_argument("rtt-timeout", arg, NULL);
         return (2);
     }
-    if (opt->rtt_timeout <= 0.f) {
+    if (opt->rtt_factor <= 0.f) {
         ft_options_err_invalid_argument("rtt-timeout", arg, NULL);
+        return (2);
+    }
+    return (0);
+}
+static int register_rtt_max(t_options *opt, char *arg) {
+    if (ft_strtof(arg, &opt->rtt_max, NULL)) {
+        ft_options_err_invalid_argument("rtt-max", arg, NULL);
+        return (2);
+    }
+    if (opt->rtt_max <= 0.f) {
+        ft_options_err_invalid_argument("rtt-max", arg, NULL);
         return (2);
     }
     return (0);
