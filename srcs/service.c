@@ -68,7 +68,7 @@ static const char *check_nmap_source() {
 
 /// Cmp function to sort service vector
 static int cmp(void *a, void *b) {
-    if (((struct service *)a)->port < ((struct service *)b)->port)
+    if (((struct service *)a)->port <= ((struct service *)b)->port)
         return (-1);
     else
         return (1);
@@ -134,7 +134,7 @@ static int read_services_name(unsigned int nbr_service,
              services[idx].type == SERVICE_TCP) ||
             (strncmp(ptr, "udp", 3) == 0 &&
              services[idx].type == SERVICE_UDP)) {
-            services[idx].name = strndup(name, name_len);
+            services[idx++].name = strndup(name, name_len);
         }
         free(line);
     }
@@ -142,6 +142,21 @@ static int read_services_name(unsigned int nbr_service,
     if (errno != 0)
         return (-1);
     return (0);
+}
+
+static void print_service_name() __attribute_maybe_unused__;
+
+static void print_service_name(struct service *services_vec) {
+    static const char *string_service_type[] = {[SERVICE_NONE] = "none",
+                                                [SERVICE_TCP] = "tcp",
+                                                [SERVICE_UDP] = "udp",
+                                                [SERVICE_BOTH] = "both"};
+    const size_t size = ft_vector_size(services_vec);
+
+    for (size_t i = 0; i < size; i++) {
+        printf("%hu/%s: %s\n", services_vec[i].port,
+               string_service_type[services_vec[i].type], services_vec[i].name);
+    }
 }
 
 /// @brief Allocate a vector of service struct containing every service name
@@ -158,13 +173,10 @@ struct service *retrieve_services(uint16_t *vec_ports,
     if (path == NULL)
         return (NULL);
 
-    if ((enabled_scan.int_representation & SCAN_LIST_TCP_MASK) &&
-        enabled_scan.udp)
-        service_needed = SERVICE_BOTH;
+    if (enabled_scan.udp)
+        service_needed = SERVICE_BOTH; // TCP names used for conclusion
     else if ((enabled_scan.int_representation & SCAN_LIST_TCP_MASK))
         service_needed = SERVICE_TCP;
-    else if (enabled_scan.udp)
-        service_needed = SERVICE_UDP;
     nbr_service = nbr_ports * (service_needed == SERVICE_BOTH   ? 2
                                : service_needed == SERVICE_NONE ? 0
                                                                 : 1);
