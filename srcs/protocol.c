@@ -373,5 +373,5 @@ ssize_t rcv_packet_msg(int fd, struct packet *pkt, struct iovec *iovec,
             return (-1);
         }
     }
-    return ((ssize_t)pkt->buffer.iphdr.tot_len);
+    return ((ssize_t)ntohs(pkt->buffer.iphdr.tot_len));
 }

@@ -51,6 +51,7 @@ int udp_release(struct task_handle *data);
 int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
 int socket_open_udp(t_options *opts, struct in_addr daddr,
                     struct in_addr *saddr);
+int socket_clear_error(int socket);
 
 static void resolve_state(struct udp_context *ctx, struct port_info *port);
 
@@ -190,6 +191,8 @@ static int send_pkt_to_port(struct task_handle *data, struct port_info *port) {
         .uh_ulen = htons(ctx->packet.len - sizeof(struct iphdr))};
     calc_udp_sum_pkt(ctx->packet.buffer.raw, ctx->packet.len);
 
+    // Need to clear any ECONNREFUSED caused by ICMP packet received
+    socket_clear_error(data->sock_main.fd);
     ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
         nmap_sys_error(&port->error, "send", "sending udp packet");

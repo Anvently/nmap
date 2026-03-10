@@ -14,7 +14,7 @@
 // Default timeout for port scan when host_ping is disabled
 #define DFT_PORT_TIMEOUT 500.f
 #define DFT_PORT_TIMEOUT_FACTOR                                                \
-    2.f                    // Timeout for port scan is host last rtt * factor
+    10.f                   // Timeout for port scan is host last rtt * factor
 #define DFT_MAX_RTT 3000.f // Maximum rtt timeout for a single task.
 
 #define MAX_WORKER 250 // Maximum number of threads

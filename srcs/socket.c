@@ -160,3 +160,21 @@ int socket_open_udp(t_options *opts, struct in_addr daddr,
 int socket_open_icmp(t_options *opts, struct in_addr daddr) {
     return (_socket_open_raw(opts, daddr, NULL, IPPROTO_ICMP));
 }
+
+/// @brief Clear ECONNREFUSED error on socket. Occurs if ICMP error received on
+/// socket.
+/// @param socket
+/// @return
+int socket_clear_error(int socket) {
+    int error;
+    socklen_t sval = sizeof(error);
+
+    if (getsockopt(socket, SOL_SOCKET, SO_ERROR, &error, &sval))
+        return (-1);
+    if (error && error == ECONNREFUSED) {
+        error = 0;
+        if (setsockopt(socket, SOL_SOCKET, SO_ERROR, &error, sval))
+            return (-1);
+    }
+    return (0);
+}
