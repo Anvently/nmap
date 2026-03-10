@@ -106,7 +106,8 @@ static void init_tasks(struct worker_handle *worker,
         task = &worker->tasks_vec[i];
         if (task->init && task->init(task) != 0) {
             task->flags.done = 1;
-            if (task->opts->verbose > 0)
+            if ((task->flags.error == 1 && task->opts->verbose > 0) ||
+                task->opts->verbose > 1)
                 print_task_result(task);
             continue;
         }

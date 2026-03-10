@@ -15,7 +15,7 @@
 #include <time.h>
 
 struct ping_context {
-    // struct tcp_udp_data tcp_udp_data;
+    // struct scan_data scan_data;
     enum tcp_state {
         TCPSTATE_START = 0,
         TCPSTATE_SYN_SENT,

@@ -10,6 +10,7 @@ void nmap_packet_error(struct nmap_error **error_ptr, const char *context,
                        struct packet *packet);
 void nmap_dns_error(struct nmap_error **error_ptr, const char *func_fail,
                     const char *detail);
+void nmap_connect_error(struct nmap_error **error_ptr, int err);
 
 void nmap_sys_error(struct nmap_error **error_ptr, const char *func_fail,
                     const char *detail) {
@@ -66,5 +67,15 @@ void nmap_dns_error(struct nmap_error **error_ptr, const char *func_fail,
                sizeof(error->u.dns.func_fail));
     ft_strlcpy(error->u.dns.description, detail,
                sizeof(error->u.dns.description));
+    error->error = errno;
+}
+
+void nmap_connect_error(struct nmap_error **error_ptr, int err) {
+    struct nmap_error *error;
+    *error_ptr = error = calloc(1, sizeof(struct nmap_error));
+    if (error == NULL)
+        return;
+    error->type = NMAP_ERROR_CONNECT;
+    error->u.connect.error = err;
     error->error = errno;
 }

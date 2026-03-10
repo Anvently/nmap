@@ -128,6 +128,36 @@ static int _socket_open_raw(t_options *opts, struct in_addr daddr,
     return (fd);
 }
 
+/// @brief Open non-blocking TCP stream socket. Unprivileged operation.
+/// @param opts
+/// @param daddr
+/// @param saddr
+/// @return
+int socket_open_tcp_connect(t_options *opts) {
+    int fd;
+    int ttl = opts->ttl;
+    const char *interface = opts->interface;
+    struct timeval timeout = {.tv_sec = (time_t)(opts->rtt_max / 1000.f)};
+
+    timeout.tv_usec =
+        (time_t)((opts->rtt_max - ((float)timeout.tv_sec * 1000.f)) * 1000.f);
+    fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+    if (fd < 0)
+        return (-1);
+    if (interface) {
+        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface,
+                       strlen(interface))) {
+            close(fd);
+            return (-2);
+        }
+    }
+    if (setsockopt(fd, IPPROTO_IP, IP_TTL, &ttl, (socklen_t)sizeof(ttl))) {
+        close(fd);
+        return (-2);
+    }
+    return (fd);
+}
+
 /// @brief Open RAW TCP socket, binded to local address and connected to remote
 /// address. Also set sock options
 /// @param opts

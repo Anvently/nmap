@@ -106,6 +106,7 @@ static void print_dns_error(struct nmap_error *error);
 static void print_sys_error(struct nmap_error *error);
 static void print_icmp_error(struct nmap_error *error);
 static void print_invalid_packet_error(struct nmap_error *error);
+static void print_connect_error(struct nmap_error *error);
 
 void print_verbose_packet(const char *buffer, size_t len) {
     _print_verbose_packet_pad(buffer, len, 0);
@@ -127,6 +128,9 @@ void print_nmap_error(struct nmap_error *error) {
         break;
     case NMAP_ERROR_INVALID_PACKET:
         print_invalid_packet_error(error);
+        break;
+    case NMAP_ERROR_CONNECT:
+        print_connect_error(error);
         break;
     default:
         break;
@@ -164,11 +168,12 @@ void print_task(struct task_handle *task) {
     case SCAN_XMAS:
     case SCAN_FIN:
     case SCAN_UDP:
+    case SCAN_CONNECT:
         printf("[");
-        for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
-            struct port_info *port = &task->io_data.tcp.ports[i];
+        for (uint16_t i = 0; i < task->io_data.scan.nbr_port; i++) {
+            struct port_info *port = &task->io_data.scan.ports[i];
             printf("%hu:%.4s%s", port->port, port_state_strings[port->state],
-                   i + 1 == task->io_data.tcp.nbr_port ? "" : ",");
+                   i + 1 == task->io_data.scan.nbr_port ? "" : ",");
         }
         printf("]");
         break;
@@ -465,4 +470,7 @@ static void print_icmp_error(struct nmap_error *error) {
 static void print_invalid_packet_error(struct nmap_error *error) {
     printf("%s => ", error->u.packet.context);
     _print_packet_short((const char *)&error->u.packet.iphdr, "", false);
+}
+static void print_connect_error(struct nmap_error *error) {
+    printf("%s (%d)", strerror(error->u.connect.error), error->u.connect.error);
 }

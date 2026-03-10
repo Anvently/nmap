@@ -27,7 +27,7 @@ ignored and do not trigger any error.
 */
 
 struct tcp_context {
-    // struct tcp_udp_data tcp_udp_data;
+    // struct scan_data scan_data;
     enum tcp_state {
         TCPSTATE_START = 0,
         TCPSTATE_SENT,

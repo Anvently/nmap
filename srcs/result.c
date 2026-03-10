@@ -55,15 +55,16 @@ void print_task_result(struct task_handle *task) {
     case SCAN_FIN:
     case SCAN_XMAS:
     case SCAN_UDP:
+    case SCAN_CONNECT:
         printf("%s scan result for host %s (%hu ports): ",
                scan_type_strings[task->scan_type], task->host->hostname,
-               task->io_data.tcp.nbr_port);
-        for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
-            printf("%hu (%s, %s", task->io_data.tcp.ports[i].port,
-                   port_state_strings[task->io_data.tcp.ports[i].state],
-                   reason_strings[task->io_data.tcp.ports[i].reason.type]);
-            if (task->io_data.tcp.ports[i].reason.rtt > 0.f)
-                printf(", %.2f", task->io_data.tcp.ports[i].reason.rtt);
+               task->io_data.scan.nbr_port);
+        for (uint16_t i = 0; i < task->io_data.scan.nbr_port; i++) {
+            printf("%hu (%s, %s", task->io_data.scan.ports[i].port,
+                   port_state_strings[task->io_data.scan.ports[i].state],
+                   reason_strings[task->io_data.scan.ports[i].reason.type]);
+            if (task->io_data.scan.ports[i].reason.rtt > 0.f)
+                printf(", %.2f", task->io_data.scan.ports[i].reason.rtt);
             printf("), ");
         }
         if (*task->error) {

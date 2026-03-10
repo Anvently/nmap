@@ -64,7 +64,8 @@ enum OPTIONS {
     OPT_NBR,     //
 };
 
-#define SCAN_LIST_TCP_MASK ((uint16_t)0b001111110)
+#define SCAN_LIST_TCP_MASK ((uint16_t)0b011111100)
+#define IS_TCP_SCAN(type) ((SCAN_LIST_TCP_MASK & (1 << (type))) != 0)
 
 union scan_list {
     struct {
@@ -193,7 +194,7 @@ enum result_reason {
     REASON_HOST_UNREACH,
     REASON_UNREACH,
     REASON_UDP_RESPONSE,
-    REASON_CONN_REFUSED,
+    REASON_CONN_REFUSED, // connect - port closed
     REASON_USER_INPUT,
     REASON_NO_RESPONSE,
     REASON_TIME_EXCEEDED,
@@ -266,7 +267,7 @@ struct ping_data {
     struct port_info *rslt;   // SINGLE PORT
 };
 
-struct tcp_udp_data {         // Used by SYN, ACK, NULL, XMAS, FIN
+struct scan_data {            // Used by SYN, ACK, NULL, XMAS, FIN
     struct in_addr daddr;     // peer address
     struct sockaddr_in saddr; // tcp
     struct port_info
@@ -290,9 +291,10 @@ struct udp_data {
 union task_data {
     struct dns_data dns;
     struct ping_data ping;
-    struct tcp_udp_data tcp;
-    struct tcp_udp_data udp;
-    struct connect_data connect;
+    struct scan_data tcp;
+    struct scan_data udp;
+    struct scan_data connect;
+    struct scan_data scan; // Generic
 };
 
 struct sock_instance {
@@ -399,6 +401,7 @@ enum nmap_error_type {
     NMAP_ERROR_ICMP,           // Error related to ping procedure
     NMAP_ERROR_INVALID_PACKET, // Error related to the reception of an
                                // unexpected packet
+    NMAP_ERROR_CONNECT,
     NMAP_ERROR_WORKER, // Error related to deadlock condition or unexpected
                        // behaviour, mostly for debugging
 };
@@ -426,6 +429,9 @@ struct nmap_error {
             struct iphdr iphdr;
             char payload[];
         } packet;
+        struct {
+            int error; // SO_ERROR return
+        } connect;
     } u;
 };
 

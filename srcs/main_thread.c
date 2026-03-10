@@ -40,6 +40,7 @@ int udp_packet_rcv(struct task_handle *data, struct pollfd sock);
 int udp_init(struct task_handle *data);
 int udp_packet_timeout(struct task_handle *data);
 int udp_release(struct task_handle *data);
+int connect_init(struct task_handle *data);
 
 struct host *check_double_host(struct host *vec_hosts, struct host *host);
 
@@ -98,7 +99,14 @@ static struct host *find_available_host(struct host *vec_hosts,
             return (host);
 
         case STATE_SCAN_PENDING:
-            return (host);
+            for (unsigned int i = 0; i < SCAN_NBR; i++) {
+                if (host->scans[i].state == SCAN_PENDING) {
+                    if (host->scans[i].type == SCAN_CONNECT && skip_blocking)
+                        continue;
+                    return (host);
+                }
+            }
+            break;
 
         case STATE_SCAN_RUNNING: // An host may perform simultaneous UDP and TCP
                                  // scan
@@ -111,7 +119,9 @@ static struct host *find_available_host(struct host *vec_hosts,
                  host->scans[SCAN_ACK].state == SCAN_PENDING ||
                  host->scans[SCAN_NULL].state == SCAN_PENDING ||
                  host->scans[SCAN_FIN].state == SCAN_PENDING ||
-                 host->scans[SCAN_XMAS].state == SCAN_PENDING))
+                 host->scans[SCAN_XMAS].state == SCAN_PENDING ||
+                 (host->scans[SCAN_CONNECT].state == SCAN_PENDING &&
+                  skip_blocking == false)))
                 return (host);
 
         default: // For now DNS and ping only
@@ -169,7 +179,7 @@ static int switch_state(struct host *host) {
         for (uint8_t i = SCAN_SYN; i < SCAN_NBR; i++) {
             if (host->scans[i].state == SCAN_PENDING)
                 host->state = STATE_SCAN_PENDING;
-            if (host->scans[i].state == SCAN_RUNNING) {
+            else if (host->scans[i].state == SCAN_RUNNING) {
                 host->state = STATE_SCAN_RUNNING;
                 return (0);
             }
@@ -202,23 +212,17 @@ static void confirm_task(struct task_handle *task) {
     case SCAN_NULL:
     case SCAN_FIN:
     case SCAN_XMAS:
-        for (uint16_t i = 0; i < task->io_data.tcp.nbr_port; i++) {
-            task->io_data.tcp.ports[i].state = PORT_SCANNING;
-        }
-        scan->remaining -= task->io_data.tcp.nbr_port;
-        host->state = STATE_SCAN_RUNNING;
-        break;
     case SCAN_UDP:
-        for (uint16_t i = 0; i < task->io_data.udp.nbr_port; i++) {
-            task->io_data.udp.ports[i].state = PORT_SCANNING;
+    case SCAN_CONNECT:
+        for (uint16_t i = 0; i < task->io_data.scan.nbr_port; i++) {
+            task->io_data.scan.ports[i].state = PORT_SCANNING;
         }
-        scan->remaining -= task->io_data.udp.nbr_port;
+        scan->remaining -= task->io_data.scan.nbr_port;
         host->state = STATE_SCAN_RUNNING;
         break;
 
     default:
         host->state = STATE_SCAN_RUNNING;
-        scan->assigned_worker += 1;
         // scan->break;
     }
 }
@@ -257,7 +261,7 @@ static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
         task->release = tcp_release;
         task->timeout = task->base_timeout = timeout;
         task->io_data.tcp.daddr = task->host->addr.sin_addr;
-        task->io_data.ping.saddr = (struct sockaddr_in){0};
+        task->io_data.tcp.saddr = (struct sockaddr_in){0};
         *nbr_socket += 1;
         task->sock_eph.fd = -1;
         task->sock_icmp = (struct sock_instance){.fd = -1};
@@ -274,13 +278,26 @@ static void assign_task_scan(struct scan_result *scan, struct task_handle *task,
         task->release = udp_release;
         task->timeout = task->base_timeout = timeout;
         task->io_data.udp.daddr = task->host->addr.sin_addr;
-        task->io_data.ping.saddr = (struct sockaddr_in){0};
+        task->io_data.udp.saddr = (struct sockaddr_in){0};
         *nbr_socket += 1;
         task->sock_eph.fd = -1;
         task->sock_icmp = (struct sock_instance){.fd = -1};
         task->sock_main = (struct sock_instance){.fd = -1};
         break;
     case SCAN_CONNECT:
+        task->io_data.connect.ports =
+            assign_multiple_port(&task->io_data.connect.nbr_port, scan, opts);
+        task->init = connect_init;
+        task->packet_send = NULL;
+        task->packet_rcv = NULL;
+        task->packet_timeout = NULL;
+        task->release = NULL;
+        task->timeout = task->base_timeout = timeout;
+        task->io_data.connect.daddr = task->host->addr.sin_addr;
+        task->io_data.connect.saddr = (struct sockaddr_in){0};
+        task->sock_eph.fd = -1;
+        task->sock_icmp = (struct sock_instance){.fd = -1};
+        task->sock_main = (struct sock_instance){.fd = -1};
         break;
     default:
         break;
@@ -355,8 +372,9 @@ static bool assign_task(struct host *host, struct task_handle *task,
             scan = &host->scans[i];
             if (scan->state != SCAN_PENDING)
                 continue;
-            if (scan->type == SCAN_CONNECT &&
-                host->current_scan.int_representation != 0)
+            if (IS_TCP_SCAN(scan->type) &&
+                ((host->current_scan.int_representation & SCAN_LIST_TCP_MASK) !=
+                 0))
                 continue;
             ret = true;
             if (scan->remaining == scan->nbr_port)
@@ -456,8 +474,9 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
     case SCAN_FIN:
     case SCAN_XMAS:
     case SCAN_UDP:
-        for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
-            port = &task.io_data.tcp.ports[i];
+    case SCAN_CONNECT:
+        for (uint16_t i = 0; i < task.io_data.scan.nbr_port; i++) {
+            port = &task.io_data.scan.ports[i];
             if (++port->retries >= MAX_RETRIES) {
                 port->state = PORT_ERROR;
                 port->reason.type = REASON_ERROR;
@@ -560,25 +579,25 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
     case SCAN_FIN:
     case SCAN_XMAS:
     case SCAN_UDP:
+    case SCAN_CONNECT:
         task.host->stats.last_max_rtt = 0.f; // reset rtt
-        for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
-            if (task.io_data.tcp.ports[i].reason.rtt < 0.f)
+        for (uint16_t i = 0; i < task.io_data.scan.nbr_port; i++) {
+            if (task.io_data.scan.ports[i].reason.rtt < 0.f)
                 continue;
             update_host_rtt(&task.host->stats,
-                            task.io_data.tcp.ports[i].reason.rtt);
+                            task.io_data.scan.ports[i].reason.rtt);
         }
         if (task.host->stats.last_max_rtt == 0.f)
             task.host->stats.last_max_rtt = task.host->stats.mean_rtt;
         if (opts->verbose > 1)
             printf("Host %s rtt: %.2f\n", task.host->hostname,
                    task.host->stats.last_max_rtt);
-        // if (*task.error && ((*task.error)->type == NMAP_ERROR_WORKER)) {
         if (*task.error) {
-            for (uint16_t i = 0; i < task.io_data.tcp.nbr_port; i++) {
-                if (task.io_data.tcp.ports[i].state != PORT_SCANNING)
+            for (uint16_t i = 0; i < task.io_data.scan.nbr_port; i++) {
+                if (task.io_data.scan.ports[i].state != PORT_SCANNING)
                     continue;
-                task.io_data.tcp.ports[i].state = PORT_ERROR;
-                task.io_data.tcp.ports[i].reason.type = REASON_ERROR;
+                task.io_data.scan.ports[i].state = PORT_ERROR;
+                task.io_data.scan.ports[i].reason.type = REASON_ERROR;
             }
         }
         if (scan->remaining == 0 && scan->assigned_worker == 0)
@@ -674,7 +693,7 @@ init_worker(struct host *hosts_vec,
     struct worker_handle *worker = find_available_worker(workers_pool);
     struct task_handle task;
     struct host *host;
-    bool ret;
+    bool task_found; //
 
     if (worker == NULL)
         return (NULL);
@@ -685,14 +704,14 @@ init_worker(struct host *hosts_vec,
         ft_vector_create(sizeof(struct task_handle), MAX_TASK_WORKER);
     do {
         task = (struct task_handle){0};
-        ret = assign_task(host, &task, &worker->nbr_sock, opts);
-        host = find_available_host(hosts_vec, true);
+        task_found = assign_task(host, &task, &worker->nbr_sock, opts);
         if (task.scan_type == SCAN_DNS || task.scan_type == SCAN_CONNECT) {
-            ret = false; // blocking task be executed by a dedicated worker
+            task_found = false; // blocking task executed by a dedicated worker
         }
         // Adds task to worker
         ft_vector_push((t_vector **)&worker->tasks_vec, &task);
-    } while (ret == true && host &&
+        host = find_available_host(hosts_vec, true);
+    } while (task_found == true && host &&
              ft_vector_size(worker->tasks_vec) < MAX_TASK_WORKER);
     if (ft_vector_resize((t_vector **)&worker->tasks_vec,
                          ft_vector_size(worker->tasks_vec))) {

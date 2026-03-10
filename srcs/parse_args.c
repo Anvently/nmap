@@ -451,6 +451,17 @@ uint16_t *parse_ports(const char *ports) {
 int check_options(t_options *options) {
     options->enabled_scan.ping = options->skip_discovery ? 0 : 1;
     options->port_vec = parse_ports(options->ports);
+    if (options->enabled_scan.connect) {
+        if (options->skip_discovery == false)
+            printf("Note: if you are trying to attempt an unprivileged scan, "
+                   "use --skip-ping in addition to connect scan\n");
+        if (options->usurp.arg)
+            ft_options_err_incompatible_options("CONNECT scan", "usurp");
+        if (options->src_port)
+            ft_options_err_incompatible_options("CONNECT scan", "source-port");
+        if (options->mtu)
+            ft_options_err_incompatible_options("CONNECT scan", "mtu");
+    }
     return (0);
 }
 
