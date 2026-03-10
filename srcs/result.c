@@ -9,6 +9,8 @@ extern const char *host_state_strings[14];
 extern const char *scan_type_strings[11];
 extern const char *port_state_strings[9];
 
+float compute_rtt(struct timeval start, struct timeval end);
+
 void print_nmap_error(struct nmap_error *error);
 void print_task(struct task_handle *task);
 void print_task_result(struct task_handle *task) {
@@ -136,13 +138,17 @@ void print_scan_result(struct scan_result *result, struct host *host,
     case SCAN_DNS:
         if (host->state <= STATE_RESOLVE_FAILED &&
             host->state != STATE_DOUBLOON && host->state != STATE_ERROR) {
-            printf("DNS: failed");
+            printf("DNS (%.2fs): failed",
+                   compute_rtt(result->start_stamp, result->end_stamp) /
+                       1000.f);
             if (result->error) {
                 printf(", ");
                 print_nmap_error(result->error);
             }
         } else {
-            printf("DNS: success, %s", inet_ntoa(host->addr.sin_addr));
+            printf("DNS (%.2fs): success, %s",
+                   compute_rtt(result->start_stamp, result->end_stamp) / 1000.f,
+                   inet_ntoa(host->addr.sin_addr));
             if (result->error == NULL && host->hostname_rsvl == NULL)
                 printf(" (not resolved)");
             else if (result->error)
@@ -153,7 +159,8 @@ void print_scan_result(struct scan_result *result, struct host *host,
         break;
     case SCAN_PING:
         printf(
-            "PING: %s, %hu/%hu port, reason: %s",
+            "PING (%.2fs): %s, %hu/%hu port, reason: %s",
+            compute_rtt(result->start_stamp, result->end_stamp) / 1000.f,
             (host->state > STATE_UP ? "UP" : host_state_strings[host->state]),
             (result->nbr_port - result->remaining), result->nbr_port,
             reason_strings[result->ports->reason.type]);
@@ -174,7 +181,8 @@ void print_scan_result(struct scan_result *result, struct host *host,
                    result->ports->reason.rtt);
         break;
     default:
-        printf("%s: %hu ports\n", scan_type_strings[result->type],
+        printf("%s (%.2fs): %hu ports\n", scan_type_strings[result->type],
+               compute_rtt(result->start_stamp, result->end_stamp) / 1000.f,
                result->nbr_port);
         print_ports(result, opts);
         break;
@@ -315,9 +323,10 @@ void print_host_result(struct host *host, t_options *opts) {
         printf("---\nHOST RESULT for %s : DUPLICATED\n---\n", host->hostname);
         return;
     }
-    printf("---\nHOST RESULT for %s (%s / %s) : %s\n", host->hostname,
+    printf("---\nHOST RESULT for %s (%s / %s) - %.2fs : %s\n", host->hostname,
            inet_ntoa(host->addr.sin_addr),
            host->hostname_rsvl ? host->hostname_rsvl : "unkown",
+           compute_rtt(host->stats.start_stamp, host->stats.end_stamp) / 1000.f,
            host_state_strings[host->state]);
     print_scan_result(&host->scans[SCAN_DNS], host, opts);
     if (host->state == STATE_RESOLVE_FAILED) {

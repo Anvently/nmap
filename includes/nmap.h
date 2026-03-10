@@ -216,6 +216,8 @@ struct port_info {
 struct scan_result {
     enum scan_type type;
     enum scan_state state;
+    struct timeval start_stamp;
+    struct timeval end_stamp;
 
     // Number of remaining port to be scanned.
     // An unemployed worker can directly choose the port `ports[remaining - 1]`,
@@ -235,6 +237,8 @@ struct scan_result {
 };
 
 struct host_stats {
+    struct timeval start_stamp;
+    struct timeval end_stamp;
     unsigned int total;
     float mean_rtt;
     float M2;

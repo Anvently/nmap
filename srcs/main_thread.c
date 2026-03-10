@@ -335,7 +335,8 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->io_data.dns.addr = (struct sockaddr_in){0};
         task->io_data.dns.hostname = host->hostname;
         task->io_data.dns.dont_resolve = (opts->numeric ? true : false);
-        task->error = &host->scans[SCAN_DNS].error;
+        scan = &host->scans[SCAN_DNS];
+        task->error = &scan->error;
         task->host = host;
         ret = true;
         scan_started = true;
@@ -361,8 +362,9 @@ static bool assign_task(struct host *host, struct task_handle *task,
         task->sock_icmp = (struct sock_instance){.fd = -1};
         task->sock_main = (struct sock_instance){.fd = -1};
         task->host = host;
+        scan = &host->scans[SCAN_PING];
         ret = true;
-        if (host->scans[SCAN_PING].remaining == host->scans[SCAN_PING].nbr_port)
+        if (scan->remaining == scan->nbr_port)
             scan_started = true;
         break;
 
@@ -396,10 +398,16 @@ static bool assign_task(struct host *host, struct task_handle *task,
         (task->scan_type == SCAN_DNS || task->scan_type == SCAN_CONNECT))
         return (false);
     confirm_task(task);
-    if (opts->verbose > 0 && scan_started) {
-        extern const char *scan_type_strings[11];
-        printf("%s scan started, host %s\n", scan_type_strings[task->scan_type],
-               task->host->hostname);
+    if (scan_started) {
+        gettimeofday(&scan->start_stamp, NULL);
+        if (timerisset(&host->stats.start_stamp) == false)
+            memcpy(&task->host->stats.start_stamp, &scan->start_stamp,
+                   sizeof(struct timeval));
+        if (opts->verbose > 0) {
+            extern const char *scan_type_strings[10];
+            printf("%s scan started, host %s\n",
+                   scan_type_strings[task->scan_type], task->host->hostname);
+        }
     }
     return (ret);
 }
@@ -495,12 +503,18 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
         break;
     }
     ret = switch_state(task.host);
-    if (scan->state == SCAN_DONE && opts->verbose > 0) {
-        printf("Scan done, host %s\n", task.host->hostname);
-        print_scan_result(scan, task.host, opts);
+    if (scan->state == SCAN_DONE) {
+        gettimeofday(&scan->end_stamp, NULL);
+        if (opts->verbose > 0) {
+            printf("Scan done, host %s\n", task.host->hostname);
+            print_scan_result(scan, task.host, opts);
+        }
     }
-    if (ret && opts->verbose)
+    if (ret) {
+        if (opts->verbose)
+            gettimeofday(&task.host->stats.end_stamp, NULL);
         print_host_result(task.host, opts);
+    }
 }
 
 static void handle_task_done(struct task_handle task, struct host *vec_hosts,
@@ -609,12 +623,18 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         break;
     }
     ret = switch_state(task.host);
-    if (scan->state == SCAN_DONE && opts->verbose > 0) {
-        printf("Scan done, host %s\n", task.host->hostname);
-        print_scan_result(scan, task.host, opts);
+    if (scan->state == SCAN_DONE) {
+        gettimeofday(&scan->end_stamp, NULL);
+        if (opts->verbose > 0) {
+            printf("Scan done, host %s\n", task.host->hostname);
+            print_scan_result(scan, task.host, opts);
+        }
     }
-    if (ret && opts->verbose)
+    if (ret) {
+        if (opts->verbose)
+            gettimeofday(&task.host->stats.end_stamp, NULL);
         print_host_result(task.host, opts);
+    }
 }
 
 static void handle_worker_result(struct worker_handle *worker, void *ret,
@@ -743,7 +763,7 @@ static int main_loop(struct host *vec_hosts, t_options *opts) {
         if (check_hosts_done(vec_hosts) == true)
             break;
         // Find available host
-        if (nbr_workers >= MAX_WORKER)
+        if (nbr_workers >= opts->threads)
             continue;
         if (init_worker(vec_hosts, workers_pool, opts))
             nbr_workers++;

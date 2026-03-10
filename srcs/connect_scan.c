@@ -48,6 +48,7 @@ static void resolve_state(struct port_info *port) {
 
     case REASON_UNREACH:
     case REASON_NO_RESPONSE:
+    case REASON_HOST_UNREACH:
         port->state = PORT_FILTERED;
         break;
 
@@ -163,6 +164,9 @@ static void check_port_state(struct pollfd *pollfd, struct port_info *info) {
         } else {
             info->reason.type = REASON_SYN_ACK;
         }
+        break;
+    case EHOSTUNREACH:
+        info->reason.type = REASON_HOST_UNREACH;
         break;
     case ECONNREFUSED:
         info->reason.type = REASON_CONN_REFUSED;
