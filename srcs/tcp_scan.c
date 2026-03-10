@@ -53,6 +53,7 @@ int tcp_release(struct task_handle *data);
 int socket_open_eph(t_options *opts, int sock_type, uint16_t *port);
 int socket_open_tcp(t_options *opts, struct in_addr daddr,
                     struct in_addr *saddr);
+int socket_clear_error(int socket);
 
 static void resolve_state(struct tcp_context *ctx, enum scan_type scan_type,
                           struct port_info *port);
@@ -274,6 +275,7 @@ static int send_pkt_to_port(struct task_handle *data, struct port_info *port) {
                             .dport = port->port});
     calc_tcp_sum_pkt(ctx->packet.buffer.raw, ctx->packet.len);
 
+    socket_clear_error(data->sock_main.fd);
     ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
         nmap_sys_error(&port->error, "send", "sending tcp packet");

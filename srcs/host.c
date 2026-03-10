@@ -147,6 +147,8 @@ static int add_host(struct host **hosts, const char *hostname,
                 if (host.scans[i].ports == NULL)
                     error(-1, errno,
                           "allocating port_info structure for scan %hhu", i);
+            } else if (host.scans[i].type == SCAN_PING) {
+                host.stats.last_max_rtt = DFT_HOST_RTT;
             }
             host.scans[i].remaining = host.scans[i].nbr_port;
         }

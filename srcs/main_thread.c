@@ -531,7 +531,7 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
 
         case REASON_USER_INPUT:
             task.host->state = STATE_UP;
-            update_host_rtt(&task.host->stats, DFT_PORT_TIMEOUT);
+            update_host_rtt(&task.host->stats, DFT_HOST_RTT);
             break;
 
         case REASON_HOST_UNREACH:

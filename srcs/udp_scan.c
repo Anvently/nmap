@@ -195,6 +195,7 @@ static int send_pkt_to_port(struct task_handle *data, struct port_info *port) {
     socket_clear_error(data->sock_main.fd);
     ret = send(data->sock_main.fd, ctx->packet.buffer.raw, ctx->packet.len, 0);
     if (ret < 0) {
+
         nmap_sys_error(&port->error, "send", "sending udp packet");
         return (1);
     } else if (ret == 0 || (size_t)ret != ctx->packet.len) {

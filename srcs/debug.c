@@ -38,9 +38,11 @@ const char *scan_state_strings[] = {[SCAN_DISABLE] = "disabled",
                                     [SCAN_DONE] = "done"};
 
 const char *scan_type_strings[] = {
-    [SCAN_DNS] = "DNS",   [SCAN_PING] = "PING",    [SCAN_SYN] = "SYN",
-    [SCAN_ACK] = "ACK",   [SCAN_NULL] = "NULL",    [SCAN_FIN] = "FIN",
-    [SCAN_XMAS] = "XMAS", [SCAN_CONNECT] = "CONN", [SCAN_UDP] = "UDP"};
+    [SCAN_DNS] = "DNS",   [SCAN_PING] = "PING",
+    [SCAN_SYN] = "SYN",   [SCAN_ACK] = "ACK",
+    [SCAN_NULL] = "NULL", [SCAN_FIN] = "FIN",
+    [SCAN_XMAS] = "XMAS", [SCAN_CONNECT] = "CONN",
+    [SCAN_UDP] = "UDP",   NULL};
 
 const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
                                 [REASON_ICMP_REPLY] = "icmp reply",

@@ -100,8 +100,7 @@ void print_port(struct port_info *port, enum scan_type type, t_options *opts) {
         ret = printf("%*s%s", padding, "", reason_strings[port->reason.type]);
         if (port->reason.ttl)
             ret += printf(" ttl %hhu", port->reason.ttl);
-        if (port->reason.rtt)
-            ret += printf(" rtt %.2f", port->reason.rtt);
+        ret += printf(" rtt %.2f", port->reason.rtt);
         padding = 24 - (ret - padding);
     }
     if (opts->verbose > 0 && port->error) {
