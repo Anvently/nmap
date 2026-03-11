@@ -20,7 +20,7 @@ Scan host port and more.\n\
   -r, --sequential              do not randomize port and scan them in order (user-order)\n\
   -f, --mtu=NUMBER              fragment packets with given MTU\n\
   -S, --usurp=ADDRESS           spoof source address\n\
-      --sim-ports               max number of ports being scan simultaneously for a single host. Default to %hu\n\
+      --sim-ports=NUMBER        max number of ports being scan simultaneously for a single host. Default to %hu\n\
       --open                    only display open or possibly opened ports\n\
       --rtt-factor=factor       set factor used to calculate port timeout based on last host rtt (timeout=rtt*factor). Default to %.2f.\n\
       --rtt-max=max             Maximum allowed timeout for a probe. Default to %.2f.\n\

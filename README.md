@@ -19,25 +19,25 @@ A partial reimplementation of [Nmap](https://nmap.org/) in C, built on raw socke
 
 ## Scan Types
 
-| Scan     | Description |
-|----------|-------------|
-| `SYN`    | Half-open scan. Sends a SYN, waits for SYN-ACK (open) or RST (closed). Never completes the handshake. Stealthy, fast, and the most common scan type. |
-| `ACK`    | Does not determine open/closed — used to map firewall rules. An unfiltered port responds with RST; no response means filtered. |
-| `NULL`   | Sends a packet with no TCP flags set. Open/filtered ports do not respond; closed ports reply with RST. |
-| `FIN`    | Sends only the FIN flag. Same response logic as NULL. Can bypass some stateless firewalls. |
-| `Xmas`   | Sets FIN, PSH, and URG flags. Same logic as NULL/FIN. Named after a "lit-up" packet. |
-| `Connect`| Full TCP handshake via the OS `connect()` syscall. Does not require root, but is easily logged. |
-| `UDP`    | Sends a UDP packet. Closed ports reply with ICMP port-unreachable; open ports may respond or stay silent. Slower and less reliable than TCP scans. |
+| Scan      | Description |
+|-----------|-------------|
+| `SYN`     | Half-open scan. Sends a SYN, waits for SYN-ACK (open) or RST (closed). Never completes the handshake. Stealthy, fast, and the most common scan type. |
+| `ACK`     | Does not determine open/closed — used to map firewall rules. An unfiltered port responds with RST; no response means filtered. |
+| `NULL`    | Sends a packet with no TCP flags set. Open/filtered ports do not respond; closed ports reply with RST. |
+| `FIN`     | Sends only the FIN flag. Same response logic as NULL. Can bypass some stateless firewalls. |
+| `Xmas`    | Sets FIN, PSH, and URG flags. Same logic as NULL/FIN. Named after a "lit-up" packet. |
+| `Connect` | Full TCP handshake via the OS `connect()` syscall. Does not require root, but is easily logged. |
+| `UDP`     | Sends a UDP packet. Closed ports reply with ICMP port-unreachable; open ports may respond or stay silent. Slower and less reliable than TCP scans. |
 
 ### Port States
 
-| State            | Meaning |
-|------------------|---------|
-| `open`           | A service is actively accepting connections |
-| `closed`         | Port is reachable but no service is listening |
-| `filtered`       | A firewall or filter is blocking the probe — no response or ICMP unreachable |
-| `open\|filtered` | Cannot determine if open or filtered (common with UDP, NULL, FIN, Xmas) |
-| `unfiltered`     | Port is reachable but state is undetermined (ACK scan) |
+| State             | Meaning |
+|-------------------|---------|
+| `open`            | A service is actively accepting connections |
+| `closed`          | Port is reachable but no service is listening |
+| `filtered`        | A firewall or filter is blocking the probe — no response or ICMP unreachable |
+| `open\|filtered`  | Cannot determine if open or filtered (common with UDP, NULL, FIN, Xmas) |
+| `unfiltered`      | Port is reachable but state is undetermined (ACK scan) |
 
 ---
 
@@ -57,15 +57,17 @@ Scan host port and more.
 
   -e, --interface               use specified interface
   -n, --numeric                 never do DNS resolution
-      --ttl=N                   set IP time-to-live to N
+      --ttl=N                   set IP time-to-live to N (default: 64)
   -g, --source-port=N           use N as source port
   -v, --verbose                 verbose output
       --data=PATTERN            fill payloads with given hex pattern
   -r, --sequential              scan ports in user-specified order (no randomization)
   -f, --mtu=NUMBER              fragment packets with given MTU
   -S, --usurp=ADDRESS           spoof source IP address
-      --reason                  show how each port state was determined
+      --sim-ports=NUMBER        max number of ports being scan simultaneously for a single host. Default to 16.
       --open                    only display open or potentially open ports
+      --rtt-factor=FACTOR       port timeout = last RTT × factor (default: 10.0)
+      --rtt-max=MAX             maximum probe timeout in ms (default: 3000.0)
       --skip-ping               skip host discovery, treat all hosts as online
   -L, --list                    only list hosts that responded to ping, skip port scan
   -N, --no-service              do not resolve service names
@@ -148,6 +150,10 @@ sudo ./ft_nmap --file hosts.txt --scan SYN,FIN,UDP -p 20-1024 -t 50
 - The dynamic RTT computed during the ping phase is used to calibrate per-probe timeouts, reducing both false `filtered` results and unnecessary wait time.
 
 ---
+
+## Implementation
+
+See [nmap_architecture.md](./nmap_architecture.md).
 
 ## Legal
 
