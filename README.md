@@ -13,7 +13,7 @@ A partial reimplementation of [Nmap](https://nmap.org/) in C, built on raw socke
 - **Multithreaded**: up to 250 threads, each handling multiple ports asynchronously — TCP ports are scanned concurrently, and a UDP scan can run in parallel with a TCP scan on the same host
 - **Packet tracing**: print every sent/received packet with full header details (`--trace-packet`)
 - **Verbosity**: detailed per-port results with state, service name, and reason
-- **Packet crafting**: custom TTL, source port, MTU fragmentation, source address spoofing, hex payload
+- **Packet crafting**: custom TTL, source port, source address spoofing, hex payload
 
 ---
 
@@ -62,7 +62,6 @@ Scan host port and more.
   -v, --verbose                 verbose output
       --data=PATTERN            fill payloads with given hex pattern
   -r, --sequential              scan ports in user-specified order (no randomization)
-  -f, --mtu=NUMBER              fragment packets with given MTU
   -S, --usurp=ADDRESS           spoof source IP address
       --sim-ports=NUMBER        max number of ports being scan simultaneously for a single host. Default to 16.
       --open                    only display open or potentially open ports
@@ -127,10 +126,10 @@ PORT      STATE           SERVICE         REASON          ERROR
 443/tcp   open            https           syn_ack ttl 119
 ```
 
-### Spoof source address and fragment packets
+### Spoof source address
 
 ```bash
-sudo ./ft_nmap target.host --scan SYN -S 192.168.1.1 -f 8 -p 1-1024
+sudo ./ft_nmap target.host --scan SYN -S 192.168.1.1 -p 1-1024
 ```
 
 ### Scan from a host list

@@ -14,7 +14,6 @@ static int register_interface(t_options *opt, char *);
 static int register_pattern(t_options *opt, char *);
 static int register_ttl(t_options *opt, char *);
 static int register_sequential(t_options *opt, char *);
-static int register_fragment(t_options *opt, char *);
 static int register_usurp(t_options *opt, char *);
 static int register_sim_ports(t_options *opt, char *);
 static int register_list(t_options *opt, char *);
@@ -64,10 +63,6 @@ t_opt_flag options_list[OPT_NBR] = {
                                     .handler = &register_sequential,
                                     .short_id = 'n',
                                     .long_id = "numeric"},
-    [OPT_FRAGMENT] = (t_opt_flag){.arg = ARG_OPTIONNAL,
-                                  .handler = &register_fragment,
-                                  .short_id = 'f',
-                                  .long_id = "mtu"},
     [OPT_USURP] = (t_opt_flag){.arg = ARG_REQUIRED,
                                .handler = &register_usurp,
                                .short_id = 'S',
@@ -197,22 +192,6 @@ static int register_sequential(t_options *opt, char *arg) {
     (void)opt;
     opt->sequential = true;
     return (0);
-}
-
-static int register_fragment(t_options *opt, char *arg) {
-    unsigned long rslt = 0;
-    int ret = 0;
-
-    ret = ft_strtoul_base(arg, &rslt, NULL, "0123456789");
-    if (rslt > UINT16_MAX) // @todo NEED TO VERIFY MAXIMUM MTU
-        ret = 1;
-    if (ret != 0)
-        ft_options_err_invalid_argument("mtu", arg, NULL);
-    else {
-        opt->mtu = (uint16_t)rslt;
-        return (0);
-    }
-    return (2);
 }
 
 static int register_usurp(t_options *opt, char *arg) {
@@ -465,8 +444,6 @@ int check_options(t_options *options) {
             ft_options_err_incompatible_options("CONNECT scan", "usurp");
         if (options->src_port)
             ft_options_err_incompatible_options("CONNECT scan", "source-port");
-        if (options->mtu)
-            ft_options_err_incompatible_options("CONNECT scan", "mtu");
     }
     return (0);
 }

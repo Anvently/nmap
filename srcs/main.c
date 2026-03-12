@@ -18,7 +18,6 @@ Scan host port and more.\n\
   -v, --verbose                 verbose output\n\
       --data=PATTERN            fill payloads with given pattern (hex)\n\
   -r, --sequential              do not randomize port and scan them in order (user-order)\n\
-  -f, --mtu=NUMBER              fragment packets with given MTU\n\
   -S, --usurp=ADDRESS           spoof source address\n\
       --sim-ports=NUMBER        max number of ports being scan simultaneously for a single host. Default to %hu\n\
       --open                    only display open or possibly opened ports\n\

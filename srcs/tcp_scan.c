@@ -373,6 +373,8 @@ static struct port_info *demul_packet(struct task_handle *data) {
     case IPPROTO_TCP:
         port = find_port(data->io_data.tcp.nbr_port, data->io_data.tcp.ports,
                          ntohs(ctx->packet.buffer.tcp.tcphdr.th_sport));
+        if (port->state != PORT_SCANNING)
+            return (NULL);
         break;
 
     case IPPROTO_ICMP:

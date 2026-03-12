@@ -44,7 +44,6 @@ enum OPTIONS {
     OPT_PATTERN,        // --data
     OPT_TTL,            // -ttl
     OPT_SEQUENTIAL,     // -r, --sequential
-    OPT_FRAGMENT,       // -f, --mtu
     OPT_USURP,          // -S, --usurp
     OPT_SIM_PORT,       // --sim-ports
     OPT_LIST,           // -L, --list
@@ -105,7 +104,6 @@ struct s_options {
     const char *pattern;
     uint8_t ttl;
     bool sequential;
-    uint16_t mtu;
     struct {
         const char *arg;
         struct in_addr addr;
