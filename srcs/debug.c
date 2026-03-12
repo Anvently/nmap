@@ -148,6 +148,8 @@ void print_worker(struct worker_handle *worker) {
 }
 
 void print_task(struct task_handle *task) {
+    struct port_info *port;
+
     printf("%s scan for host %s (%s), %2s%2s%2s%2s%2s%2s%2s%2s ",
            scan_type_strings[task->scan_type], task->host->hostname,
            inet_ntoa(task->host->addr.sin_addr),
@@ -161,7 +163,7 @@ void print_task(struct task_handle *task) {
 
         break;
     case SCAN_PING:
-        struct port_info *port = &task->io_data.ping.rslt[0];
+        port = &task->io_data.ping.rslt[0];
         printf("[%hu:%.4s]", port->port, port_state_strings[port->state]);
         break;
     case SCAN_ACK:
@@ -172,7 +174,7 @@ void print_task(struct task_handle *task) {
     case SCAN_CONNECT:
         printf("[");
         for (uint16_t i = 0; i < task->io_data.scan.nbr_port; i++) {
-            struct port_info *port = &task->io_data.scan.ports[i];
+            port = &task->io_data.scan.ports[i];
             printf("%hu:%.4s%s", port->port, port_state_strings[port->state],
                    i + 1 == task->io_data.scan.nbr_port ? "" : ",");
         }
