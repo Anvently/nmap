@@ -11,6 +11,7 @@ else
 	CFLAGS += -m64 -D__ARCH_TYPE=64
 endif
 
+VALGRIND=1
 
 ifeq ($(VALGRIND),)
 	CFLAGS += -fsanitize=address 

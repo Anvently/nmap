@@ -787,10 +787,10 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
     opts->port_vec = parse_ports(opts->ports);
     vec_hosts = hosts_create(args, nbr_args, opts);
     ret = main_loop(vec_hosts, opts);
-    if (opts->verbose == 0) { // Reprint every host result at the end
-        for (unsigned int i = 0; i < ft_vector_size(vec_hosts); i++)
-            print_host_result(&vec_hosts[i], opts);
-    }
+    // if (opts->verbose == 0) { // Reprint every host result at the end
+    //     for (unsigned int i = 0; i < ft_vector_size(vec_hosts); i++)
+    //         print_host_result(&vec_hosts[i], opts);
+    // }
     hosts_free(&vec_hosts);
     free_services_vec(opts->services_vec);
     ft_vector_free((t_vector **)&opts->port_vec);

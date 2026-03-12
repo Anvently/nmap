@@ -192,6 +192,7 @@ enum result_reason {
     REASON_RST,
     REASON_PORT_UNREACH,
     REASON_HOST_UNREACH,
+    REASON_NET_UNREACH,
     REASON_UNREACH,
     REASON_UDP_RESPONSE,
     REASON_CONN_REFUSED, // connect - port closed

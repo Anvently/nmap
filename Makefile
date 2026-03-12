@@ -16,7 +16,7 @@ DEPS		=	$(addprefix $(OBJS_FOLDER), $(SRCS_FILES:.c=.d))
 LIBFT		=	libft/libft.a
 
 CC			=	gcc
-CFLAGS		=	-fsanitize=address -Wall -Wextra -Werror -g3 -I$(INCLUDES) -D_GNU_SOURCE
+CFLAGS		=	-Wall -Wextra -Werror -g3 -I$(INCLUDES) -D_GNU_SOURCE
 
 .PHONY		=	all clean fclean re bonus
 
@@ -25,8 +25,8 @@ all: $(NAME)
 $(NAME): $(LIBFT) $(OBJS) Makefile
 	@echo "\n-----COMPILING $(NAME)-------\n"
 	$(CC) $(CFLAGS) $(OBJS) -o $(NAME) -Llibft/ -lft -lm
-	-setcap cap_net_raw+ep ./ft_nmap	
-	-sudo setcap cap_net_raw+ep ./ft_nmap
+	# -setcap cap_net_raw+ep ./ft_nmap	
+	# -sudo setcap cap_net_raw+ep ./ft_nmap
 	@echo "Executable has been successfully created."
 
 

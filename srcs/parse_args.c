@@ -451,6 +451,10 @@ uint16_t *parse_ports(const char *ports) {
 int check_options(t_options *options) {
     if (options->help)
         return (0);
+    if (options->list) {
+        options->enabled_scan.int_representation = 0;
+        options->enabled_scan.dns = 1;
+    }
     options->enabled_scan.ping = options->skip_discovery ? 0 : 1;
     options->port_vec = parse_ports(options->ports);
     if (options->enabled_scan.connect) {

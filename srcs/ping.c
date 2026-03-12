@@ -190,13 +190,19 @@ static int handle_packet_rcv(struct task_handle *data) {
             return (1);
         case ICMP_DEST_UNREACH:
             data->io_data.ping.rslt->reason.ttl = ctx->packet.buffer.iphdr.ttl;
-            if (ctx->packet.buffer.icmp.icmphdr.code == ICMP_HOST_UNREACH) {
+            switch (ctx->packet.buffer.icmp.icmphdr.code) {
+            case ICMP_HOST_UNREACH:
                 data->io_data.ping.rslt->reason.type = REASON_HOST_UNREACH;
                 return (1);
-            } else if (ctx->packet.buffer.icmp.icmphdr.code ==
-                       ICMP_PORT_UNREACH) {
+            case ICMP_PORT_UNREACH:
                 data->io_data.ping.rslt->reason.type = REASON_PORT_UNREACH;
                 return (1);
+            case ICMP_NET_UNREACH:
+                data->io_data.ping.rslt->reason.type = REASON_NET_UNREACH;
+                return (1);
+            default:
+                // error with FALLTHRU
+                break;
             }
             /* FALLTHRU */
         case ICMP_REDIRECT:
@@ -356,13 +362,42 @@ int ping_packet_send(struct task_handle *data) {
     return (0);
 }
 
+/// @brief
+/// @param ctx
+/// @return
+bool ignore_icmp_packet(struct task_handle *data) {
+    struct ping_context *ctx = (struct ping_context *)data->ctx;
+    struct icmphdr *org_icmphdr;
+
+    switch (ctx->packet.buffer.icmp.icmphdr.type) {
+    case ICMP_ECHO:
+    case ICMP_TIMESTAMP:
+    case ICMP_TIMESTAMPREPLY:
+    case ICMP_INFO_REQUEST:
+    case ICMP_INFO_REPLY:
+        return (true);
+    case ICMP_ECHOREPLY:
+        if (ntohs(ctx->packet.buffer.icmp.icmphdr.un.echo.id) !=
+                (uint16_t)(gettid() % UINT16_MAX) ||
+            ctx->packet.buffer.icmp.icmphdr.un.echo.sequence != 0)
+            return (true);
+        break;
+    default:
+        org_icmphdr = (struct icmphdr *)ctx->packet.buffer.icmp_error.payload;
+        if (ctx->packet.buffer.icmp_error.org_iphdr.daddr !=
+                data->io_data.ping.daddr.s_addr ||
+            (ctx->packet.buffer.icmp_error.org_iphdr.protocol == IPPROTO_ICMP &&
+             org_icmphdr->un.echo.id != (uint16_t)(gettid() % UINT16_MAX)))
+            return (true);
+    }
+    return (false);
+}
+
 int ping_packet_rcv(struct task_handle *data, struct pollfd poll) {
     struct ping_context *ctx = (struct ping_context *)data->ctx;
 
-    if (rcv_packet(data, poll)) {
-        // print_verbose_packet(ctx->packet.buffer.raw, ctx->packet.len);
+    if (rcv_packet(data, poll))
         return (1);
-    }
     if (data->opts->trace_packet)
         print_packet_short(ctx->packet.buffer.raw, "RCV");
     if (poll.fd == data->sock_main.fd) { // TCP
@@ -381,6 +416,8 @@ int ping_packet_rcv(struct task_handle *data, struct pollfd poll) {
             error(1, errno, "invalid tcp state");
         }
     } else if (poll.fd == data->sock_icmp.fd) { // ICMP
+        if (ignore_icmp_packet(data))
+            return (0);
         switch (ctx->icmp_state) {
         case ICMPSTATE_START:
             fprintf(stderr, "Received incoming packet but nothing was sent");

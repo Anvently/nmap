@@ -50,6 +50,7 @@ const char *reason_strings[] = {[REASON_UNKNOWN] = "unknown",
                                 [REASON_RST] = "reset",
                                 [REASON_PORT_UNREACH] = "port unreachable",
                                 [REASON_HOST_UNREACH] = "host unreachable",
+                                [REASON_NET_UNREACH] = "net unreachable",
                                 [REASON_UNREACH] = "destination unreachable",
                                 [REASON_UDP_RESPONSE] = "udp-response",
                                 [REASON_CONN_REFUSED] = "connection refused",
@@ -224,7 +225,7 @@ void print_host(struct host *host) {
            host->current_scan.connect ? 'C' : 0,
            host->current_scan.udp ? 'U' : 0);
     for (unsigned int i = 0; i < SCAN_NBR; i++) {
-        print_scan_state(host->scans + i);
+        print_scan_state(&host->scans[i]);
     }
     printf("---\n");
 }

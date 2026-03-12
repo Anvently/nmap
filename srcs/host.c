@@ -122,36 +122,32 @@ static int add_host(struct host **hosts, const char *hostname,
         .remaining = 0, .type = SCAN_DNS, .state = SCAN_PENDING, .ports = NULL};
 
     // Port scans
-    if (opts->list == false) {
-        for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
 
-            host.scans[i] = (struct scan_result){.remaining = 0,
-                                                 .nbr_port = 0,
-                                                 .state = SCAN_DISABLE,
-                                                 .type = i};
+    for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
 
-            // If scan is enabled
-            if (((uint16_t)opts->enabled_scan.int_representation &
-                 ((uint16_t)1 << i)) != 0) {
+        host.scans[i] = (struct scan_result){
+            .remaining = 0, .nbr_port = 0, .state = SCAN_DISABLE, .type = i};
 
-                host.scans[i].state = SCAN_PENDING;
-                if (host.scans[i].type == SCAN_PING) {
-                    host.scans[i].nbr_port = 5;
-                    host.scans[i].ports =
-                        allocate_ports(ping_ports.ports, true);
-                } else {
-                    host.scans[i].nbr_port = nbr_port;
-                    host.scans[i].ports =
-                        allocate_ports(opts->port_vec, opts->sequential);
-                }
-                if (host.scans[i].ports == NULL)
-                    error(-1, errno,
-                          "allocating port_info structure for scan %hhu", i);
-            } else if (host.scans[i].type == SCAN_PING) {
-                host.stats.last_max_rtt = DFT_HOST_RTT;
+        // If scan is enabled
+        if (((uint16_t)opts->enabled_scan.int_representation &
+             ((uint16_t)1 << i)) != 0) {
+
+            host.scans[i].state = SCAN_PENDING;
+            if (host.scans[i].type == SCAN_PING) {
+                host.scans[i].nbr_port = 5;
+                host.scans[i].ports = allocate_ports(ping_ports.ports, true);
+            } else {
+                host.scans[i].nbr_port = nbr_port;
+                host.scans[i].ports =
+                    allocate_ports(opts->port_vec, opts->sequential);
             }
-            host.scans[i].remaining = host.scans[i].nbr_port;
+            if (host.scans[i].ports == NULL)
+                error(-1, errno, "allocating port_info structure for scan %hhu",
+                      i);
+        } else if (host.scans[i].type == SCAN_PING) {
+            host.stats.last_max_rtt = DFT_HOST_RTT;
         }
+        host.scans[i].remaining = host.scans[i].nbr_port;
     }
 
     // Adding to vector

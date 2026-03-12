@@ -341,7 +341,7 @@ void print_host_result(struct host *host, t_options *opts) {
         return;
     }
     // Iterate enable scan result and sort port result in order
-    for (unsigned int i = SCAN_PING; i < SCAN_NBR; i++) {
+    for (unsigned int i = SCAN_PING + 1; i < SCAN_NBR; i++) {
         if (host->scans[i].state == SCAN_DONE) {
             if (ft_merge_sort(host->scans[i].ports, host->scans[i].nbr_port,
                               cmp, false))
@@ -350,7 +350,9 @@ void print_host_result(struct host *host, t_options *opts) {
             //     print_scan_result(&host->scans[i], host, opts);
         }
     }
-    print_ports_summary(host, opts, opts->verbose != 0);
+    if ((opts->enabled_scan.int_representation &
+         ~((1 << SCAN_DNS) | (1 << SCAN_PING))) != 0)
+        print_ports_summary(host, opts, opts->verbose != 0);
 
     printf("---\n");
 }
