@@ -570,6 +570,7 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         case REASON_HOST_UNREACH:
         case REASON_PORT_UNREACH:
         case REASON_TIME_EXCEEDED:
+        case REASON_NET_UNREACH:
             task.host->state = STATE_DOWN;
             update_host_rtt(&task.host->stats,
                             scan->ports[available_port].reason.rtt);

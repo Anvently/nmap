@@ -463,9 +463,9 @@ static void print_sys_error(struct nmap_error *error) {
         printf(" => %s (%d)", strerror(error->error), error->error);
 }
 static void print_icmp_error(struct nmap_error *error) {
-    printf("[ICMP] %s (%hhu) from %s",
+    printf("[ICMP] %s (%hhu/%hhu) from %s",
            icmp_type_strings[error->u.icmp.icmphdr.type],
-           error->u.icmp.icmphdr.type,
+           error->u.icmp.icmphdr.type, error->u.icmp.icmphdr.code,
            inet_ntoa((struct in_addr){.s_addr = error->u.icmp.iphdr.saddr}));
 }
 static void print_invalid_packet_error(struct nmap_error *error) {
