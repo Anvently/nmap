@@ -511,8 +511,7 @@ static void handle_task_cancelled(struct task_handle task, t_options *opts) {
         }
     }
     if (ret) {
-        if (opts->verbose)
-            gettimeofday(&task.host->stats.end_stamp, NULL);
+        gettimeofday(&task.host->stats.end_stamp, NULL);
         print_host_result(task.host, opts);
     }
 }
@@ -632,8 +631,7 @@ static void handle_task_done(struct task_handle task, struct host *vec_hosts,
         }
     }
     if (ret) {
-        if (opts->verbose)
-            gettimeofday(&task.host->stats.end_stamp, NULL);
+        gettimeofday(&task.host->stats.end_stamp, NULL);
         print_host_result(task.host, opts);
     }
 }
