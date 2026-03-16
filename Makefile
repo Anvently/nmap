@@ -16,7 +16,7 @@ DEPS		=	$(addprefix $(OBJS_FOLDER), $(SRCS_FILES:.c=.d))
 LIBFT		=	libft/libft.a
 
 CC			=	gcc
-CFLAGS		=	-Wall -Wextra -Werror -g3 -I$(INCLUDES) -D_GNU_SOURCE
+CFLAGS		=	-Wall -Wextra -Werror -g3 -I$(INCLUDES) -D_GNU_SOURCE -fsanitize=address
 
 .PHONY		=	all clean fclean re bonus
 

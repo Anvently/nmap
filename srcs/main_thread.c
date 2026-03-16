@@ -785,7 +785,6 @@ int ft_nmap(char **args, unsigned int nbr_args, t_options *opts) {
     int ret = 0;
     struct host *vec_hosts;
     // main loop
-    opts->port_vec = parse_ports(opts->ports);
     vec_hosts = hosts_create(args, nbr_args, opts);
     ret = main_loop(vec_hosts, opts);
     // if (opts->verbose == 0) { // Reprint every host result at the end

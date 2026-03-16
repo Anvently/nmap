@@ -299,6 +299,7 @@ static void print_ports_summary(struct host *host, t_options *opts,
     }
     if (summary_only) {
         printf("\n");
+        free(summary.conclusions);
         return;
     }
     printf("\n%1$-6s%2$-*3$.*3$s", "PORT", "SERVICE", summary.service_width);
