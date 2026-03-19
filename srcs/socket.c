@@ -135,7 +135,7 @@ static int _socket_open_raw(t_options *opts, struct in_addr daddr,
 /// @return
 int socket_open_tcp_connect(t_options *opts) {
     int fd;
-    int ttl = opts->ttl;
+    int ttl = opts->ttl == 0 ? 1 : opts->ttl;
     const char *interface = opts->interface;
     struct timeval timeout = {.tv_sec = (time_t)(opts->rtt_max / 1000.f)};
 

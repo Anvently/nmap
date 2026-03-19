@@ -440,6 +440,8 @@ int check_options(t_options *options) {
         if (options->skip_discovery == false)
             printf("Note: if you are trying to attempt an unprivileged scan, "
                    "use --skip-ping in addition to connect scan\n");
+        if (options->ttl == 0)
+            printf("Warning: ttl will be set to 1 for CONN scan\n");
         if (options->usurp.arg)
             ft_options_err_incompatible_options("CONNECT scan", "usurp");
         if (options->src_port)
