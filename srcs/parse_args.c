@@ -437,7 +437,8 @@ int check_options(t_options *options) {
     options->enabled_scan.ping = options->skip_discovery ? 0 : 1;
     options->port_vec = parse_ports(options->ports);
     if (options->enabled_scan.connect) {
-        if (options->skip_discovery == false)
+        if (options->enabled_scan.int_representation ==
+            ((1 << SCAN_CONNECT) | (1 << SCAN_DNS) | (1 << SCAN_PING)))
             printf("Note: if you are trying to attempt an unprivileged scan, "
                    "use --skip-ping in addition to connect scan\n");
         if (options->ttl == 0)

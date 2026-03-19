@@ -1,3 +1,4 @@
+#include <error.h>
 #include <libft.h>
 #include <netinet/ip.h>
 #include <nmap.h>
@@ -61,8 +62,7 @@ int main(int argc, char **argv) {
         return (0);
     }
     if (nbr_args == 0 && options.file == NULL) {
-        printf("%s\n", no_argument);
-        return (1);
+        error(2, 0, "%s\n", no_argument);
     }
     return (ft_nmap(argv + 1, nbr_args, &options));
 }
